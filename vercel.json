@@ -1,5 +1,7 @@
 {
   "version": 2,
+  "framework": "nextjs",
   "installCommand": "pnpm install",
-  "buildCommand": "pnpm turbo build"
+  "buildCommand": "pnpm turbo build",
+  "outputDirectory": "frontend/.next"
 }

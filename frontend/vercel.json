@@ -1,8 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "pnpm install && pnpm build",
-  "outputDirectory": ".next",
-  "installCommand": "pnpm install",
-  "framework": null,
+  "installCommand": "cd .. && pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm build",
   "regions": ["iad1"]
 }

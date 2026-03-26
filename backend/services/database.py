@@ -82,27 +82,35 @@ def save_analysis(
     # 从 repo_url 提取 repo_name（"owner/repo"）
     repo_name = repo_url.rstrip("/").split("/")[-1]
 
-    data, _ = (
+    sb.table("analysis_history").insert(
+        {
+            "user_id": auth_user_id,
+            "repo_url": repo_url,
+            "repo_name": repo_name,
+            "branch": branch,
+            "result_data": result_data,
+            "health_score": metrics["health_score"],
+            "quality_score": metrics["quality_score"],
+            "risk_level": metrics["risk_level"],
+            "risk_level_color": metrics["risk_level_color"],
+            "risk_level_bg": metrics["risk_level_bg"],
+            "border_color": metrics["border_color"],
+        }
+    ).execute()
+
+    fetched = (
         sb.table("analysis_history")
-        .insert(
-            {
-                "user_id": auth_user_id,  # uuid — 需要先 upsert user
-                "repo_url": repo_url,
-                "repo_name": repo_name,
-                "branch": branch,
-                "result_data": result_data,
-                "health_score": metrics["health_score"],
-                "quality_score": metrics["quality_score"],
-                "risk_level": metrics["risk_level"],
-                "risk_level_color": metrics["risk_level_color"],
-                "risk_level_bg": metrics["risk_level_bg"],
-                "border_color": metrics["border_color"],
-            }
-        )
+        .select("id, created_at")
+        .eq("user_id", auth_user_id)
+        .order("created_at", desc=True)
+        .limit(1)
+        .maybe_single()
         .execute()
     )
-    row = data[0]
-    return SaveAnalysisResponse(id=row["id"], created_at=row["created_at"])
+    r = fetched.data if hasattr(fetched, "data") else fetched
+    if not r:
+        raise RuntimeError("Save analysis failed: record not found after insert")
+    return SaveAnalysisResponse(id=r["id"], created_at=r["created_at"])
 
 
 def get_history(
@@ -225,12 +233,18 @@ def upsert_user(sb: Client, auth_user_id: str, payload: dict) -> UserProfile:
     payload_clean["auth_user_id"] = auth_user_id
     payload_clean["updated_at"] = datetime.utcnow().isoformat()
 
-    data, _ = (
+    sb.table("users").upsert(payload_clean, on_conflict="auth_user_id").execute()
+
+    fetched = (
         sb.table("users")
-        .upsert(payload_clean, on_conflict="auth_user_id")
+        .select("*")
+        .eq("auth_user_id", auth_user_id)
+        .maybe_single()
         .execute()
     )
-    r = data[0]
+    r = fetched.data if hasattr(fetched, "data") else fetched
+    if not r:
+        raise RuntimeError("Upsert user failed: user not found after upsert")
     return UserProfile(
         id=r["id"],
         auth_user_id=r["auth_user_id"],

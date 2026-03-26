@@ -2,18 +2,27 @@
  * GitIntel API Client
  *
  * 所有请求通过前端 BFF 层（/api/*）代理，
- * BFF 会自动从 NextAuth Session 中注入 JWT Token。
+ * BFF 会自动从 NextAuth Session 中注入用户身份。
  */
+/**
+ * 从 NextAuth session 中提取用户身份标识
+ * 优先用 session.user.id（标准字段），fallback 到 sub（兼容自定义字段）
+ */
+export function getUserId(session: { user?: { id?: string; sub?: string } }): string {
+  return session.user?.id ?? session.user?.sub ?? "";
+}
 
 /**
  * 发起仓库分析请求（支持 SSE 流式响应）
  * @param repoUrl  仓库地址
  * @param branch   分支名（可选）
+ * @param userId   当前登录用户 ID（必填，由调用方从 session 获取后传入）
  * @param onEvent  每个 SSE 事件的回调
  */
 export async function analyzeRepo(
   repoUrl: string,
-  branch?: string,
+  branch: string | undefined,
+  userId: string,
   onEvent?: (data: unknown) => void
 ) {
   const body: { repoUrl: string; branch?: string } = { repoUrl };
@@ -21,7 +30,11 @@ export async function analyzeRepo(
 
   const res = await fetch(`/api/analyze`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+      "X-User-Id": userId,
+    },
     body: JSON.stringify(body),
   });
 

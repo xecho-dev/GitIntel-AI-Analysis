@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { motion } from "motion/react";
 import { signOut } from "next-auth/react";
 import {
@@ -18,33 +18,96 @@ import {
   ChevronRight,
   LogOut,
   AlertTriangle,
+  Loader2,
 } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Badge } from "@/components/ui/Badge";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-
-interface GitHubProfile {
-  login?: string;
-  name?: string;
-  email?: string;
-  image?: string;
-  bio?: string;
-  company?: string;
-  location?: string;
-  blog?: string;
-  public_repos?: number;
-  followers?: number;
-  following?: number;
-  created_at?: string;
-}
+import type { UserProfile, HistoryStats } from "@/lib/types";
 
 export default function AccountPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const profile = session?.user as (GitHubProfile & { login?: string }) | undefined;
+  const sessionProfile = session?.user as
+    | (UserProfile & { login?: string })
+    | undefined;
 
-  if (status === "loading") {
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [stats, setStats] = useState<HistoryStats | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
+  const syncProfile = useCallback(async () => {
+    if (!sessionProfile?.login) return;
+    setProfileLoading(true);
+    setProfileError(null);
+    try {
+      // Upsert GitHub profile info (sync from session → DB)
+      const upsertRes = await fetch("/api/user/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          login: sessionProfile.login,
+          name: sessionProfile.name,
+          email: sessionProfile.email,
+          avatar_url: sessionProfile.image,
+          bio: (sessionProfile as Record<string, unknown>)?.bio as string | undefined,
+          location: (sessionProfile as Record<string, unknown>)?.location as string | undefined,
+          company: (sessionProfile as Record<string, unknown>)?.company as string | undefined,
+          blog: (sessionProfile as Record<string, unknown>)?.blog as string | undefined,
+        }),
+      });
+
+      if (upsertRes.ok) {
+        const data: UserProfile = await upsertRes.json();
+        setProfile(data);
+      } else {
+        // Fallback: try to GET existing profile
+        const getRes = await fetch("/api/user/profile");
+        if (getRes.ok) {
+          const data: UserProfile = await getRes.json();
+          setProfile(data);
+        } else if (upsertRes.status === 404) {
+          setProfileError("请先在首页完成一次仓库分析");
+        }
+      }
+
+      // Also fetch stats
+      const historyRes = await fetch("/api/history?page=1&page_size=1");
+      if (historyRes.ok) {
+        const historyData = await historyRes.json();
+        setStats(historyData.stats ?? null);
+      }
+    } catch {
+      setProfileError("加载失败，请刷新重试");
+    } finally {
+      setProfileLoading(false);
+    }
+  }, [sessionProfile]);
+
+  useEffect(() => {
+    if (status === "authenticated") {
+      syncProfile();
+    }
+  }, [status, syncProfile]);
+
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return "未知";
+    return new Date(dateStr).toLocaleDateString("zh-CN", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  };
+
+  // Resolve avatar: use real profile data if available, fallback to session
+  const avatarUrl =
+    profile?.avatar_url ??
+    sessionProfile?.image ??
+    `https://github.com/${sessionProfile?.login}.png`;
+
+  if (status === "loading" || profileLoading) {
     return (
       <div className="space-y-8 animate-pulse">
         <div className="h-12 w-64 bg-white/5 rounded" />
@@ -56,7 +119,7 @@ export default function AccountPage() {
     );
   }
 
-  if (!session || !profile) {
+  if (!session || !sessionProfile) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
         <AlertTriangle size={48} className="text-amber-400" />
@@ -72,13 +135,23 @@ export default function AccountPage() {
     );
   }
 
-  const formatDate = (dateStr?: string) => {
-    if (!dateStr) return "未知";
-    return new Date(dateStr).toLocaleDateString("zh-CN", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
+  const displayProfile = profile ?? {
+    id: "",
+    auth_user_id: sessionProfile?.sub ?? "",
+    github_id: null,
+    login: sessionProfile.login ?? "",
+    email: sessionProfile.email,
+    avatar_url: avatarUrl,
+    name: sessionProfile.name,
+    bio: (sessionProfile as Record<string, unknown>)?.bio as string | undefined,
+    company: (sessionProfile as Record<string, unknown>)?.company as string | undefined,
+    location: (sessionProfile as Record<string, unknown>)?.location as string | undefined,
+    blog: (sessionProfile as Record<string, unknown>)?.blog as string | undefined,
+    public_repos: (sessionProfile as Record<string, unknown>)?.public_repos as number ?? 0,
+    followers: (sessionProfile as Record<string, unknown>)?.followers as number ?? 0,
+    following: (sessionProfile as Record<string, unknown>)?.following as number ?? 0,
+    created_at: "",
+    updated_at: "",
   };
 
   return (
@@ -98,13 +171,14 @@ export default function AccountPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Profile Card */}
         <GlassCard className="lg:col-span-4 p-8 flex flex-col items-center text-center">
           <div className="relative mb-6">
             <div className="w-24 h-24 rounded-full p-1 bg-gradient-to-tr from-blue-400 to-purple-400">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={profile.image ?? `https://github.com/${profile.login}.png`}
-                alt={profile.name ?? profile.login ?? "avatar"}
+                src={avatarUrl}
+                alt={displayProfile.name ?? displayProfile.login}
                 className="w-full h-full rounded-full bg-[#10141a] border-4 border-[#10141a] object-cover"
               />
             </div>
@@ -116,49 +190,73 @@ export default function AccountPage() {
               />
             </div>
           </div>
-          <h2 className="text-2xl font-bold mb-1">{profile.name ?? profile.login}</h2>
-          {profile.login && (
+          <h2 className="text-2xl font-bold mb-1">
+            {displayProfile.name ?? displayProfile.login}
+          </h2>
+          {displayProfile.login && (
             <div className="flex items-center gap-2 text-blue-400 text-sm font-mono mb-4">
               <Github size={14} />
-              github.com/{profile.login}
+              github.com/{displayProfile.login}
             </div>
           )}
-          {profile.bio && (
-            <p className="text-slate-400 text-xs mb-4">{profile.bio}</p>
+          {displayProfile.bio && (
+            <p className="text-slate-400 text-xs mb-4">{displayProfile.bio}</p>
           )}
           <div className="w-full pt-6 border-t border-white/5 text-left space-y-4">
-            {profile.location && (
+            {displayProfile.location && (
               <div className="flex justify-between text-sm">
                 <span className="text-slate-500">位置</span>
-                <span className="font-medium">{profile.location}</span>
+                <span className="font-medium">{displayProfile.location}</span>
               </div>
             )}
-            {profile.company && (
+            {displayProfile.company && (
               <div className="flex justify-between text-sm">
                 <span className="text-slate-500">公司</span>
-                <span className="font-medium">{profile.company}</span>
+                <span className="font-medium">{displayProfile.company}</span>
               </div>
             )}
             <div className="flex justify-between text-sm">
               <span className="text-slate-500">仓库</span>
-              <span className="font-medium">{profile.public_repos ?? 0}</span>
+              <span className="font-medium">{displayProfile.public_repos}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-slate-500">粉丝</span>
-              <span className="font-medium">{profile.followers ?? 0}</span>
+              <span className="font-medium">{displayProfile.followers}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-slate-500">加入日期</span>
-              <span className="font-medium">{formatDate(profile.created_at)}</span>
+              <span className="font-medium">
+                {formatDate(displayProfile.created_at)}
+              </span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-slate-500">账户角色</span>
               <span className="font-medium">技术专家 (Architect)</span>
             </div>
           </div>
+
+          {profileLoading && (
+            <div className="mt-4 flex items-center gap-2 text-slate-500 text-xs">
+              <Loader2 size={12} className="animate-spin" />
+              同步中...
+            </div>
+          )}
+          {profileError && (
+            <p className="mt-4 text-amber-400 text-xs">{profileError}</p>
+          )}
+
+          <button
+            onClick={() => syncProfile()}
+            title="刷新 GitHub 资料"
+            className="mt-4 w-full py-2 border border-blue-500/20 text-blue-400 hover:bg-blue-500/10 transition-colors rounded-sm font-medium flex items-center justify-center gap-2"
+          >
+            <RefreshCw size={14} />
+            同步 GitHub 资料
+          </button>
+
           <button
             onClick={() => signOut({ callbackUrl: "/login" })}
-            className="mt-6 w-full py-2.5 border border-rose-500/20 text-rose-400 hover:bg-rose-500/10 transition-colors rounded-sm font-medium flex items-center justify-center gap-2"
+            className="mt-3 w-full py-2.5 border border-rose-500/20 text-rose-400 hover:bg-rose-500/10 transition-colors rounded-sm font-medium flex items-center justify-center gap-2"
           >
             <LogOut size={14} />
             退出登录
@@ -166,6 +264,7 @@ export default function AccountPage() {
         </GlassCard>
 
         <div className="lg:col-span-8 space-y-6">
+          {/* Stats / Quota Card */}
           <GlassCard className="p-8 relative overflow-hidden group" glow>
             <div className="absolute top-0 right-0 p-6 opacity-10">
               <Zap size={96} />
@@ -193,12 +292,19 @@ export default function AccountPage() {
               <div>
                 <div className="flex justify-between text-sm mb-2 font-mono">
                   <span>AI 扫描额度 (本月)</span>
-                  <span>78 / 200</span>
+                  <span>
+                    {stats?.total_scans ?? 0} / 200
+                  </span>
                 </div>
                 <div className="h-2 w-full bg-[#31353c] rounded-full overflow-hidden">
                   <div
                     className="h-full bg-gradient-to-r from-blue-400 to-purple-400"
-                    style={{ width: "39%" }}
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        ((stats?.total_scans ?? 0) / 200) * 100
+                      )}%`,
+                    }}
                   />
                 </div>
               </div>
@@ -206,27 +312,27 @@ export default function AccountPage() {
                 <div className="bg-[#0a0e14] p-4 rounded-sm border border-white/5">
                   <p className="text-xs text-slate-500 mb-1">存储空间</p>
                   <p className="text-lg font-bold font-mono">
-                    4.2 GB{" "}
+                    {((stats?.total_scans ?? 0) * 0.05).toFixed(1)} GB{" "}
                     <span className="text-xs font-normal text-slate-600">
                       / 10GB
                     </span>
                   </p>
                 </div>
                 <div className="bg-[#0a0e14] p-4 rounded-sm border border-white/5">
-                  <p className="text-xs text-slate-500 mb-1">导出报告</p>
+                  <p className="text-xs text-slate-500 mb-1">分析次数</p>
                   <p className="text-lg font-bold font-mono">
-                    12{" "}
+                    {stats?.total_scans ?? 0}{" "}
                     <span className="text-xs font-normal text-slate-600">
                       / 不限
                     </span>
                   </p>
                 </div>
                 <div className="bg-[#0a0e14] p-4 rounded-sm border border-white/5">
-                  <p className="text-xs text-slate-500 mb-1">API 调用</p>
+                  <p className="text-xs text-slate-500 mb-1">平均健康分</p>
                   <p className="text-lg font-bold font-mono">
-                    1,402{" "}
+                    {stats?.avg_health_score ?? 0}
                     <span className="text-xs font-normal text-slate-600">
-                      / 5k
+                      / 100
                     </span>
                   </p>
                 </div>
@@ -281,7 +387,9 @@ export default function AccountPage() {
                 电子邮箱
               </label>
               <div className="flex items-center justify-between gap-4">
-                <p className="text-sm font-medium">{profile.email ?? "未公开邮箱"}</p>
+                <p className="text-sm font-medium">
+                  {displayProfile.email ?? "未公开邮箱"}
+                </p>
                 <button className="text-[10px] text-blue-400 hover:underline uppercase font-bold">
                   更改
                 </button>

@@ -193,7 +193,7 @@ JWT_SECRET=your_jwt_secret
 ### 1. 克隆 & 安装依赖
 
 ```bash
-git clone https://github.com/your-org/gitintel-ai-analysis.git
+git clone https://github.com/xecho-dev/GitIntel-AI-Analysis.git
 cd gitintel-ai-analysis
 pnpm install
 ```

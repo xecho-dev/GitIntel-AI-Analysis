@@ -1,8 +1,11 @@
 "use client";
 
-import React, { useState } from "react";
-import { Search, Zap } from "lucide-react";
+import React, { useState, useCallback } from "react";
+import { useSession } from "next-auth/react";
+import { Search, Zap, Loader2 } from "lucide-react";
 import { motion } from "motion/react";
+import { useAppStore } from "@/store/useAppStore";
+import { analyzeRepo } from "@/lib/api";
 import { ArchitectureAgentCard } from "@/components/agents/ArchitectureAgentCard";
 import { QualityAgentCard } from "@/components/agents/QualityAgentCard";
 import { DependencyAgentCard } from "@/components/agents/DependencyAgentCard";
@@ -11,7 +14,33 @@ import { PricingSidebar } from "@/components/layout/PricingSidebar";
 import { AnalysisPreview } from "@/components/layout/AnalysisPreview";
 
 export default function HomePage() {
-  const [repoUrl, setRepoUrl] = useState("https://github.com/facebook/react");
+  const { data: session } = useSession();
+  const isAnalyzing = useAppStore((s) => s.isAnalyzing);
+  const { repoUrl, setRepoUrl, setIsAnalyzing, setError } = useAppStore();
+  const [localRepoUrl, setLocalRepoUrl] = useState(repoUrl);
+
+  const handleAnalyze = useCallback(async () => {
+    if (!localRepoUrl.trim()) {
+      setError("请输入仓库地址");
+      return;
+    }
+    setRepoUrl(localRepoUrl);
+    setIsAnalyzing(true);
+    setError(null);
+
+    const userId = session?.user?.id ?? session?.user?.sub ?? "";
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await analyzeRepo(localRepoUrl, undefined, userId, (data: any) => {
+        useAppStore.getState().pushAgentEvent(data);
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "分析失败");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }, [localRepoUrl, session, setRepoUrl, setIsAnalyzing, setError]);
 
   return (
     <motion.div
@@ -33,15 +62,29 @@ export default function HomePage() {
             <Search className="text-slate-500" size={18} />
             <input
               type="text"
-              value={repoUrl}
-              onChange={(e) => setRepoUrl(e.target.value)}
+              value={localRepoUrl}
+              onChange={(e) => setLocalRepoUrl(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAnalyze()}
               placeholder="https://github.com/facebook/react"
               className="bg-transparent border-none text-[#dfe2eb] w-full focus:ring-0 placeholder:text-slate-600 text-sm"
             />
           </div>
-          <button className="bg-blue-400 text-blue-950 px-8 py-2.5 font-black text-sm rounded-lg hover:brightness-110 transition-all flex items-center gap-2">
-            <span>立即分析</span>
-            <Zap size={16} fill="currentColor" />
+          <button
+            onClick={handleAnalyze}
+            disabled={isAnalyzing}
+            className="bg-blue-400 text-blue-950 px-8 py-2.5 font-black text-sm rounded-lg hover:brightness-110 transition-all flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {isAnalyzing ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                <span>分析中...</span>
+              </>
+            ) : (
+              <>
+                <span>立即分析</span>
+                <Zap size={16} fill="currentColor" />
+              </>
+            )}
           </button>
         </div>
       </section>

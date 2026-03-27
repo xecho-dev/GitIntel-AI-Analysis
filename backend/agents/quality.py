@@ -1,30 +1,714 @@
-from .base_agent import BaseAgent, AgentEvent
+"""QualityAgent — 对仓库源码进行真实代码质量分析（圈复杂度、重复率、代码异味等）。"""
+import asyncio
+import os
+import re
+from collections import defaultdict
 from typing import AsyncGenerator
 
+from .base_agent import AgentEvent, BaseAgent, _make_event
+
+
+# ─── 工具函数 ───────────────────────────────────────────────────
+
+def _read_text(path: str) -> str:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    except UnicodeDecodeError:
+        try:
+            with open(path, "r", encoding="latin-1") as f:
+                return f.read()
+        except Exception:
+            return ""
+
+
+def _cyclomatic_complexity(node) -> int:
+    """递归计算 tree-sitter 节点的圈复杂度（CF-type 节点 + 1）。"""
+    COMPLEXITY_NODES = {
+        "if_statement", "elif_clause", "else_clause",
+        "for_statement", "for_in_statement",
+        "while_statement", "do_statement",
+        "switch_statement", "case_statement",
+        "catch_clause", "try_statement",
+        "conditional_expression", "ternary_expression",
+        "and_operator", "or_operator",
+        "with_statement",
+        "labeled_statement",
+    }
+    count = 0
+
+    def walk(n):
+        nonlocal count
+        if n.type in COMPLEXITY_NODES:
+            count += 1
+        for child in n.children:
+            walk(child)
+
+    walk(node)
+    return max(count + 1, 1)
+
+
+# ─── Agent ──────────────────────────────────────────────────────
 
 class QualityAgent(BaseAgent):
+    """分析代码质量：圈复杂度、文件大小、重复率、测试覆盖估算。"""
+
     name = "quality"
 
-    async def stream(self, repo_url: str, branch: str = "main") -> AsyncGenerator[AgentEvent, None]:
-        yield AgentEvent(
-            type="status", agent=self.name,
-            message="正在扫描代码质量指标...", percent=10, data=None
+    async def stream(
+        self,
+        repo_path: str,
+        branch: str = "main",
+        file_contents: dict[str, str] | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        yield _make_event(self.name, "status", "正在扫描源码文件…", 10, None)
+
+        if file_contents is not None:
+            # ── GitHub API 模式 ───────────────────────────────────
+            py_contents = {p: c for p, c in file_contents.items() if p.endswith(".py")}
+            ts_contents = {p: c for p, c in file_contents.items()
+                          if p.endswith((".ts", ".tsx", ".js", ".jsx"))}
+
+            yield _make_event(
+                self.name, "progress",
+                f"扫描完成: {len(py_contents)} 个 Python 文件, "
+                f"{len(ts_contents)} 个 TypeScript 文件",
+                25, None
+            )
+
+            total_files = len(py_contents) + len(ts_contents)
+            py_files_count = len(py_contents)
+            ts_files_count = len(ts_contents)
+
+            try:
+                py_metrics = await self._analyze_python_inmemory(py_contents)
+            except Exception as exc:
+                py_metrics = {"error": str(exc)}
+
+            try:
+                ts_metrics = await self._analyze_typescript_inmemory(ts_contents)
+            except Exception as exc:
+                ts_metrics = {"error": str(exc)}
+
+            try:
+                duplication = await self._calc_duplication_inmemory(
+                    {**py_contents, **ts_contents}
+                )
+            except Exception:
+                duplication = {"score": 0, "duplicated_blocks": 0}
+
+            try:
+                test_info = self._estimate_test_coverage_inmemory(
+                    py_contents, ts_contents
+                )
+            except Exception:
+                test_info = {"estimated_coverage": 0, "test_files": 0}
+
+        else:
+            # ── 本地磁盘模式 ─────────────────────────────────────
+            py_files = await self._walk_by_lang(repo_path, [".py"])
+            ts_files = await self._walk_by_lang(repo_path, [".ts", ".tsx", ".js", ".jsx"])
+            all_files = await self._walk_by_lang(repo_path, None)  # 总文件数
+            total_files = len(all_files)
+            py_files_count = len(py_files)
+            ts_files_count = len(ts_files)
+
+            yield _make_event(
+                self.name, "progress",
+                f"扫描完成: {py_files_count} 个 Python 文件, "
+                f"{ts_files_count} 个 TypeScript 文件, "
+                f"共 {total_files} 个文件",
+                25, None
+            )
+
+            try:
+                py_metrics = await self._analyze_python(py_files)
+            except Exception as exc:
+                py_metrics = {"error": str(exc)}
+
+            try:
+                ts_metrics = await self._analyze_typescript(ts_files)
+            except Exception as exc:
+                ts_metrics = {"error": str(exc)}
+
+            try:
+                duplication = await self._calc_duplication(py_files + ts_files)
+            except Exception:
+                duplication = {"score": 0, "duplicated_blocks": 0}
+
+            try:
+                test_info = await self._estimate_test_coverage(repo_path, py_files, ts_files)
+            except Exception:
+                test_info = {"estimated_coverage": 0, "test_files": 0}
+
+        yield _make_event(
+            self.name, "progress",
+            "正在汇总质量评分…", 80, None
         )
-        yield AgentEvent(
-            type="progress", agent=self.name,
-            message="计算复杂度...", percent=40, data=None
+
+        # 综合评分
+        health_score = self._compute_health_score(py_metrics, ts_metrics, duplication, test_info)
+        complexity_label = self._calc_complexity(health_score)
+        maintainability = self._calc_maintainability(health_score)
+
+        result = {
+            "health_score": round(health_score, 1),
+            "test_coverage": test_info.get("estimated_coverage", 0),
+            "complexity": complexity_label,
+            "maintainability": maintainability,
+            "python_metrics": py_metrics,
+            "typescript_metrics": ts_metrics,
+            "duplication": duplication,
+            "test_info": test_info,
+            "total_files": total_files,
+            "python_files": py_files_count,
+            "typescript_files": ts_files_count,
+        }
+
+        yield _make_event(
+            self.name, "result", "代码质量分析完成",
+            100, result
         )
-        yield AgentEvent(
-            type="progress", agent=self.name,
-            message="分析测试覆盖率...", percent=70, data=None
-        )
-        yield AgentEvent(
-            type="result", agent=self.name,
-            message="代码质量分析完成",
-            percent=100,
-            data={
-                "health_score": 84,
-                "test_coverage": 62,
-                "complexity": "Normal",
+
+    # ─── Python 分析 ───────────────────────────────────────────
+
+    @staticmethod
+    async def _walk_by_lang(root: str, extensions: list[str] | None) -> list[str]:
+        IGNORE = frozenset({
+            "node_modules", ".git", "__pycache__", ".venv", "venv",
+            "dist", "build", ".next", ".nuxt", "target",
+            ".pytest_cache", ".mypy_cache", ".ruff_cache",
+        })
+
+        def _do() -> list[str]:
+            files = []
+            for dirpath, dirs, names in os.walk(root):
+                dirs[:] = [d for d in dirs if d not in IGNORE and not d.startswith(".")]
+                for name in names:
+                    if extensions is None or any(name.endswith(ext) for ext in extensions):
+                        files.append(os.path.join(dirpath, name))
+            return files
+
+        return await asyncio.to_thread(_do)
+
+    @staticmethod
+    async def _analyze_python(files: list[str]) -> dict:
+        try:
+            from tree_sitter_languages import get_parser
+            parser = get_parser("python")
+        except Exception:
+            return {"error": "tree-sitter-python not available"}
+
+        def _do() -> dict:
+            total_complexity = 0
+            func_count = 0
+            class_count = 0
+            max_complexity = 0
+            over_complexity_count = 0
+            long_functions: list[dict] = []
+            large_files: list[dict] = []
+
+            for fpath in files:
+                try:
+                    source = _read_text(fpath)
+                    lines = source.count("\n") + 1
+                except Exception:
+                    continue
+
+                large_files.append({"path": fpath.replace("\\", "/"), "lines": lines})
+
+                try:
+                    tree = parser.parse(bytes(source, "utf-8"))
+                except Exception:
+                    continue
+
+                # 统计函数、类、复杂度
+                for node in tree.root_node.children:
+                    QualityAgent._walk_python(node, [], 0)
+
+                funcs, classes, complexity = QualityAgent._walk_python(tree.root_node, [], 0)
+                func_count += funcs
+                class_count += classes
+                total_complexity += complexity
+                if complexity > max_complexity:
+                    max_complexity = complexity
+                if complexity > 10:
+                    over_complexity_count += 1
+                # 统计超过 50 行的函数
+                for chunk in source.split("\n\n"):
+                    if len(chunk.split("\n")) > 50 and ("def " in chunk or "async def " in chunk):
+                        fname = re.search(r"def\s+(\w+)", chunk)
+                        long_functions.append({
+                            "file": fpath.replace("\\", "/"),
+                            "function": fname.group(1) if fname else "(unknown)",
+                            "lines": len(chunk.split("\n")),
+                        })
+
+            avg_complexity = total_complexity / max(func_count, 1)
+            large_files.sort(key=lambda x: x["lines"], reverse=True)
+            long_functions.sort(key=lambda x: x["lines"], reverse=True)
+
+            return {
+                "total_functions": func_count,
+                "total_classes": class_count,
+                "avg_complexity": round(avg_complexity, 2),
+                "max_complexity": max_complexity,
+                "over_complexity_count": over_complexity_count,  # > 10
+                "long_functions": long_functions[:10],
+                "large_files": large_files[:10],
             }
+
+        return await asyncio.to_thread(_do)
+
+    @staticmethod
+    def _walk_python(node, path: list, depth: int) -> tuple[int, int, int]:
+        """返回 (function_count, class_count, total_complexity)。"""
+        funcs = 0
+        classes = 0
+        complexity = 0
+
+        COMPLEXITY_NODES = {
+            "if_statement", "elif_clause",
+            "for_statement", "for_in_statement",
+            "while_statement", "with_statement",
+            "except_clause", "try_statement",
+            "conditional_expression",
+            "and_operator", "or_operator",
+        }
+
+        if node.type == "function_definition":
+            local_complexity = 1
+            for child in node.children:
+                if child.type in COMPLEXITY_NODES:
+                    local_complexity += 1
+            funcs = 1
+            complexity = local_complexity
+        elif node.type == "class_definition":
+            classes = 1
+
+        for child in node.children:
+            f, c, comp = QualityAgent._walk_python(child, path + [node.type], depth + 1)
+            funcs += f
+            classes += c
+            complexity += comp
+
+        return funcs, classes, complexity
+
+    # ─── In-memory variants（GitHub API 模式） ─────────────────
+
+    @staticmethod
+    async def _analyze_python_inmemory(contents: dict[str, str]) -> dict:
+        """分析内存中的 Python 文件内容（GitHub API 模式）。"""
+        try:
+            from tree_sitter_languages import get_parser
+            parser = get_parser("python")
+        except Exception:
+            return {"error": "tree-sitter-python not available"}
+
+        def _do() -> dict:
+            total_complexity = 0
+            func_count = 0
+            class_count = 0
+            max_complexity = 0
+            over_complexity_count = 0
+            long_functions: list[dict] = []
+            large_files: list[dict] = []
+
+            for fpath, source in contents.items():
+                lines = source.count("\n") + 1
+                large_files.append({"path": fpath.replace("\\", "/"), "lines": lines})
+
+                try:
+                    tree = parser.parse(bytes(source, "utf-8"))
+                except Exception:
+                    continue
+
+                funcs, classes, complexity = QualityAgent._walk_python(tree.root_node, [], 0)
+                func_count += funcs
+                class_count += classes
+                total_complexity += complexity
+                if complexity > max_complexity:
+                    max_complexity = complexity
+                if complexity > 10:
+                    over_complexity_count += 1
+
+                for chunk in source.split("\n\n"):
+                    if len(chunk.split("\n")) > 50 and ("def " in chunk or "async def " in chunk):
+                        fname = re.search(r"def\s+(\w+)", chunk)
+                        long_functions.append({
+                            "file": fpath.replace("\\", "/"),
+                            "function": fname.group(1) if fname else "(unknown)",
+                            "lines": len(chunk.split("\n")),
+                        })
+
+            avg_complexity = total_complexity / max(func_count, 1)
+            large_files.sort(key=lambda x: x["lines"], reverse=True)
+            long_functions.sort(key=lambda x: x["lines"], reverse=True)
+
+            return {
+                "total_functions": func_count,
+                "total_classes": class_count,
+                "avg_complexity": round(avg_complexity, 2),
+                "max_complexity": max_complexity,
+                "over_complexity_count": over_complexity_count,
+                "long_functions": long_functions[:10],
+                "large_files": large_files[:10],
+            }
+
+        return await asyncio.to_thread(_do)
+
+    @staticmethod
+    async def _analyze_typescript_inmemory(contents: dict[str, str]) -> dict:
+        """分析内存中的 TypeScript 文件内容（GitHub API 模式）。"""
+        try:
+            from tree_sitter_languages import get_parser
+            parser = get_parser("typescript")
+        except Exception:
+            return {"error": "tree-sitter-typescript not available"}
+
+        def _do() -> dict:
+            total_complexity = 0
+            func_count = 0
+            class_count = 0
+            max_complexity = 0
+            over_complexity_count = 0
+            large_files: list[dict] = []
+
+            for fpath, source in contents.items():
+                lines = source.count("\n") + 1
+                large_files.append({"path": fpath.replace("\\", "/"), "lines": lines})
+
+                try:
+                    tree = parser.parse(bytes(source, "utf-8"))
+                except Exception:
+                    continue
+
+                funcs, classes, complexity = QualityAgent._walk_ts(tree.root_node)
+                func_count += funcs
+                class_count += classes
+                total_complexity += complexity
+                if complexity > max_complexity:
+                    max_complexity = complexity
+                if complexity > 10:
+                    over_complexity_count += 1
+
+            avg_complexity = total_complexity / max(func_count, 1)
+            large_files.sort(key=lambda x: x["lines"], reverse=True)
+
+            return {
+                "total_functions": func_count,
+                "total_classes": class_count,
+                "avg_complexity": round(avg_complexity, 2),
+                "max_complexity": max_complexity,
+                "over_complexity_count": over_complexity_count,
+                "large_files": large_files[:10],
+            }
+
+        return await asyncio.to_thread(_do)
+
+    @staticmethod
+    async def _calc_duplication_inmemory(
+        contents: dict[str, str], sample_limit: int = 80
+    ) -> dict:
+        """用简化 N-gram (3 行块) 哈希检测重复（内存模式）。"""
+        def _do() -> dict:
+            sampled = list(contents.items())[:sample_limit]
+            line_hashes: dict[int, int] = defaultdict(int)
+            total_blocks = 0
+
+            for _, source in sampled:
+                lines = [
+                    l.strip()
+                    for l in source.splitlines()
+                    if l.strip() and not l.strip().startswith(("#", "//", "/*", "*", "*/"))
+                ]
+                for i in range(len(lines) - 2):
+                    block = "\n".join(lines[i: i + 3])
+                    h = hash(block)
+                    if len(block) > 15:
+                        line_hashes[h] += 1
+                        total_blocks += 1
+
+            duplicated = sum(1 for cnt in line_hashes.values() if cnt > 2)
+            dup_rate = (duplicated / max(total_blocks, 1)) * 100
+
+            return {
+                "score": round(min(dup_rate, 100), 1),
+                "duplicated_blocks": duplicated,
+                "total_blocks_checked": total_blocks,
+                "duplication_level": "Low" if dup_rate < 5 else ("Medium" if dup_rate < 15 else "High"),
+            }
+
+        return await asyncio.to_thread(_do)
+
+    @staticmethod
+    def _estimate_test_coverage_inmemory(
+        py_contents: dict[str, str], ts_contents: dict[str, str]
+    ) -> dict:
+        """估算测试覆盖率（内存模式）。"""
+        test_pattern = re.compile(
+            r"(^|/)test[_\-.]|^test[s]?/|^tests?/|_test\.py|_tests\.py|"
+            r"\.spec\.(ts|tsx|js|jsx)|\.test\.(ts|tsx|js|jsx)|"
+            r"__tests?__/"
         )
+        src_pattern = re.compile(r"(^|/)src/|^lib/|^app/|^components?/|^pages?/")
+
+        py_test = sum(1 for f in py_contents if test_pattern.search(f))
+        ts_test = sum(1 for f in ts_contents if test_pattern.search(f))
+        py_src = sum(1 for f in py_contents if src_pattern.search(f))
+        ts_src = sum(1 for f in ts_contents if src_pattern.search(f))
+
+        total_src = max(py_src + ts_src, 1)
+        total_test = py_test + ts_test
+        ratio = (total_test / total_src) * 100
+        estimated = min(round(ratio, 1), 95.0)
+
+        frameworks: list[str] = []
+        all_contents = {**py_contents, **ts_contents}
+        for content in list(all_contents.values())[:20]:
+            c = content[:500]
+            if "pytest" in c:
+                frameworks.append("pytest")
+            if "unittest" in c:
+                frameworks.append("unittest")
+            if "@testing-library" in c:
+                frameworks.append("Jest/Testing Library")
+            if "vitest" in c:
+                frameworks.append("Vitest")
+            if "jest" in c:
+                frameworks.append("Jest")
+
+        return {
+            "estimated_coverage": estimated,
+            "test_files": total_test,
+            "source_files": total_src,
+            "test_frameworks": list(dict.fromkeys(frameworks)),
+        }
+
+    # ─── TypeScript 分析 ───────────────────────────────────────
+
+    @staticmethod
+    async def _analyze_typescript(files: list[str]) -> dict:
+        try:
+            from tree_sitter_languages import get_parser
+            parser = get_parser("typescript")
+        except Exception:
+            return {"error": "tree-sitter-typescript not available"}
+
+        def _do() -> dict:
+            total_complexity = 0
+            func_count = 0
+            class_count = 0
+            max_complexity = 0
+            over_complexity_count = 0
+            large_files: list[dict] = []
+
+            for fpath in files:
+                try:
+                    source = _read_text(fpath)
+                    lines = source.count("\n") + 1
+                except Exception:
+                    continue
+
+                large_files.append({"path": fpath.replace("\\", "/"), "lines": lines})
+
+                try:
+                    tree = parser.parse(bytes(source, "utf-8"))
+                except Exception:
+                    continue
+
+                funcs, classes, complexity = QualityAgent._walk_ts(tree.root_node)
+                func_count += funcs
+                class_count += classes
+                total_complexity += complexity
+                if complexity > max_complexity:
+                    max_complexity = complexity
+                if complexity > 10:
+                    over_complexity_count += 1
+
+            avg_complexity = total_complexity / max(func_count, 1)
+            large_files.sort(key=lambda x: x["lines"], reverse=True)
+
+            return {
+                "total_functions": func_count,
+                "total_classes": class_count,
+                "avg_complexity": round(avg_complexity, 2),
+                "max_complexity": max_complexity,
+                "over_complexity_count": over_complexity_count,
+                "large_files": large_files[:10],
+            }
+
+        return await asyncio.to_thread(_do)
+
+    @staticmethod
+    def _walk_ts(node) -> tuple[int, int, int]:
+        """返回 (function_count, class_count, total_complexity)。"""
+        funcs = 0
+        classes = 0
+        complexity = 0
+
+        COMPLEXITY_NODES = {
+            "if_statement", "else_clause",
+            "for_statement", "for_in_statement", "for_of_statement",
+            "while_statement", "do_statement",
+            "switch_statement", "case_statement",
+            "catch_clause", "try_statement",
+            "conditional_expression",
+            "binary_expression",  # && or ||
+        }
+
+        IS_FUNC = {
+            "function_declaration", "method_declaration",
+            "arrow_function", "function",
+        }
+        IS_CLASS = {
+            "class_declaration", "class",
+            "interface_declaration", "abstract_class_declaration",
+        }
+
+        if node.type in IS_FUNC:
+            local_comp = 1
+            for child in node.children:
+                if child.type in COMPLEXITY_NODES:
+                    local_comp += 1
+            funcs = 1
+            complexity = local_comp
+        elif node.type in IS_CLASS:
+            classes = 1
+
+        for child in node.children:
+            f, c, comp = QualityAgent._walk_ts(child)
+            funcs += f
+            classes += c
+            complexity += comp
+
+        return funcs, classes, complexity
+
+    # ─── 重复率检测 ────────────────────────────────────────────
+
+    @staticmethod
+    async def _calc_duplication(files: list[str], sample_limit: int = 80) -> dict:
+        """用简化 N-gram (3 行块) 哈希检测重复。"""
+        def _do() -> dict:
+            # 只采样前 sample_limit 个文件，避免太慢
+            sampled = files[:sample_limit]
+            line_hashes: dict[str, int] = defaultdict(int)
+            block_counts: dict[str, int] = defaultdict(int)
+            total_blocks = 0
+
+            for fpath in sampled:
+                try:
+                    source = _read_text(fpath)
+                except Exception:
+                    continue
+                lines = [
+                    l.strip()
+                    for l in source.splitlines()
+                    if l.strip() and not l.strip().startswith(("#", "//", "/*", "*", "*/"))
+                ]
+                for i in range(len(lines) - 2):
+                    block = "\n".join(lines[i : i + 3])
+                    h = hash(block)
+                    if len(block) > 15:  # 忽略太短的块
+                        line_hashes[h] += 1
+                        block_counts[block] += 1
+                        total_blocks += 1
+
+            # 出现 > 2 次的块视为重复
+            duplicated = sum(1 for cnt in line_hashes.values() if cnt > 2)
+            dup_rate = (duplicated / max(total_blocks, 1)) * 100
+
+            return {
+                "score": round(min(dup_rate, 100), 1),
+                "duplicated_blocks": duplicated,
+                "total_blocks_checked": total_blocks,
+                "duplication_level": "Low" if dup_rate < 5 else ("Medium" if dup_rate < 15 else "High"),
+            }
+
+        return await asyncio.to_thread(_do)
+
+    # ─── 测试覆盖率估算 ────────────────────────────────────────
+
+    @staticmethod
+    async def _estimate_test_coverage(
+        repo_path: str, py_files: list[str], ts_files: list[str]
+    ) -> dict:
+        def _do() -> dict:
+            # 统计测试文件数量（常见命名模式）
+            test_pattern = re.compile(
+                r"(^|/)test[_\-.]|^test[s]?/|^tests?/|_test\.py|_tests\.py|"
+                r"\.spec\.(ts|tsx|js|jsx)|\.test\.(ts|tsx|js|jsx)|"
+                r"__tests?__/"
+            )
+            src_pattern = re.compile(
+                r"(^|/)src/|^lib/|^app/|^components?/|^pages?/"
+            )
+
+            py_test = sum(1 for f in py_files if test_pattern.search(f))
+            ts_test = sum(1 for f in ts_files if test_pattern.search(f))
+            py_src = sum(1 for f in py_files if src_pattern.search(f))
+            ts_src = sum(1 for f in ts_files if src_pattern.search(f))
+
+            total_src = max(py_src + ts_src, 1)
+            total_test = py_test + ts_test
+
+            # 覆盖率估算：test/src 比值 * 100，上限 95%
+            ratio = (total_test / total_src) * 100
+            estimated = min(round(ratio, 1), 95.0)
+
+            # 检测测试框架
+            frameworks: list[str] = []
+            for f in py_files + ts_files:
+                content = _read_text(f)[:500]
+                if "pytest" in content:
+                    frameworks.append("pytest")
+                if "unittest" in content:
+                    frameworks.append("unittest")
+                if "@testing-library" in content:
+                    frameworks.append("Jest/Testing Library")
+                if "vitest" in content:
+                    frameworks.append("Vitest")
+                if "jest" in content:
+                    frameworks.append("Jest")
+
+            return {
+                "estimated_coverage": estimated,
+                "test_files": total_test,
+                "source_files": total_src,
+                "test_frameworks": list(dict.fromkeys(frameworks)),
+            }
+
+        return await asyncio.to_thread(_do)
+
+    # ─── 综合评分 ───────────────────────────────────────────────
+
+    @staticmethod
+    def _compute_health_score(
+        py_metrics: dict, ts_metrics: dict,
+        duplication: dict, test_info: dict
+    ) -> float:
+        score = 100.0
+
+        # 复杂度惩罚
+        for m in [py_metrics, ts_metrics]:
+            if "avg_complexity" in m:
+                if m["avg_complexity"] > 10:
+                    score -= min((m["avg_complexity"] - 10) * 3, 30)
+                elif m["avg_complexity"] > 5:
+                    score -= (m["avg_complexity"] - 5) * 1.5
+
+        # 重复率惩罚
+        dup_score = duplication.get("score", 0)
+        if dup_score > 15:
+            score -= min((dup_score - 15) * 1.5, 20)
+        elif dup_score > 5:
+            score -= (dup_score - 5) * 0.8
+
+        # 测试覆盖惩罚
+        coverage = test_info.get("estimated_coverage", 0)
+        if coverage < 30:
+            score -= (30 - coverage) * 0.5
+        elif coverage > 80:
+            score += 5  # 奖励
+
+        return max(min(score, 100), 0)

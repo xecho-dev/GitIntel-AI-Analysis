@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 load_dotenv()
 
 from agents import BaseAgent, AgentEvent
-from graph.analysis_graph import stream_analysis, build_analysis_state
+from graph.analysis_graph import stream_analysis_sse
 from middleware.auth import require_auth
 from schemas.request import AnalyzeRequest, HealthRequest
 from schemas.response import HealthResponse
@@ -73,10 +73,9 @@ async def health():
 async def analyze(req: AnalyzeRequest, request: Request):
     """分析仓库 - SSE 流式响应（需要登录）"""
     user = require_auth(request)
-    initial_state = build_analysis_state(req.repo_url, req.branch)
 
     async def event_stream():
-        async for event in stream_analysis(req.repo_url, req.branch):
+        async for event in stream_analysis_sse(req.repo_url, req.branch):
             yield event
 
     return StreamingResponse(

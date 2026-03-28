@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach } from "@jest/globals";
 import { getUserId } from "@/lib/api";
 
 // We test the sync functions and mock the fetch-based functions
@@ -31,11 +31,11 @@ describe("getUserId", () => {
 
 describe("analyzeRepo", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    jest.clearAllMocks();
   });
 
   it("throws when response is not ok", async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+    global.fetch = jest.fn().mockResolvedValue({
       ok: false,
       status: 401,
       statusText: "Unauthorized",
@@ -49,7 +49,7 @@ describe("analyzeRepo", () => {
   });
 
   it("throws when response body is null", async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+    global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       body: null,
     }) as unknown as typeof fetch;
@@ -62,33 +62,22 @@ describe("analyzeRepo", () => {
   });
 
   it("calls onEvent for each parsed SSE data line", async () => {
-    const onEvent = vi.fn();
+    const onEvent = jest.fn();
 
-    // Mock ReadableStream
-    const chunks = [
-      'data: {"type":"status","agent":"repo_loader","message":"starting"}\n\n',
-      'data: {"type":"result","agent":"repo_loader","data":{"total_loaded":10}}\n\n',
-    ];
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      start(controller) {
-        chunks.forEach((chunk) => {
-          controller.enqueue(encoder.encode(chunk));
-        });
-        controller.close();
-      },
-    });
-
-    global.fetch = vi.fn().mockResolvedValue({
+    global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       body: {
         getReader: () => {
           let index = 0;
+          const chunks = [
+            'data: {"type":"status","agent":"repo_loader","message":"starting"}\n\n',
+            'data: {"type":"result","agent":"repo_loader","data":{"total_loaded":10}}\n\n',
+          ];
           return {
             read: async () => {
               if (index < chunks.length) {
                 const chunk = chunks[index++];
-                return { done: false, value: encoder.encode(chunk) };
+                return { done: false, value: new TextEncoder().encode(chunk) };
               }
               return { done: true, value: undefined };
             },
@@ -115,7 +104,7 @@ describe("analyzeRepo", () => {
   });
 
   it("sends correct headers including X-User-Id", async () => {
-    const mockFetch = vi.fn().mockResolvedValue({
+    const mockFetch = jest.fn().mockResolvedValue({
       ok: true,
       body: {
         getReader: () => ({
@@ -145,7 +134,7 @@ describe("analyzeRepo", () => {
   });
 
   it("includes branch in body when provided", async () => {
-    const mockFetch = vi.fn().mockResolvedValue({
+    const mockFetch = jest.fn().mockResolvedValue({
       ok: true,
       body: {
         getReader: () => ({

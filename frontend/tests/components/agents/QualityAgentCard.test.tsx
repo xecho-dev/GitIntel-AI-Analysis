@@ -1,15 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "@jest/globals";
 import { render, screen } from "@testing-library/react";
 import { QualityAgentCard } from "@/components/agents/QualityAgentCard";
 import { useAppStore } from "@/store/useAppStore";
 
 // Mock the store
-vi.mock("@/store/useAppStore", () => ({
-  useAppStore: vi.fn(),
+jest.mock("@/store/useAppStore", () => ({
+  useAppStore: jest.fn(),
 }));
 
 // Mock recharts
-vi.mock("recharts", () => ({
+jest.mock("recharts", () => ({
   BarChart: ({ children, data }: { children: React.ReactNode; data: unknown[] }) => (
     <div data-testid="bar-chart" data-len={data.length}>{children}</div>
   ),
@@ -23,24 +23,30 @@ vi.mock("recharts", () => ({
   Tooltip: () => <div data-testid="tooltip" />,
 }));
 
-// Mock lucide-react
-vi.mock("lucide-react", async () => {
-  const actual = await vi.importActual("lucide-react");
-  return { ...actual, BarChart3: () => <div data-testid="bar-chart-3-icon" /> };
-});
+jest.mock("lucide-react", () => ({
+  BarChart3: () => null,
+  AlertCircle: () => null,
+  TrendingDown: () => null,
+  Code2: () => null,
+  Activity: () => null,
+  CheckCircle: () => null,
+  Clock: () => null,
+  AlertTriangle: () => null,
+  Package: () => null,
+}));
 
 // Mock GlassCard
-vi.mock("@/components/ui/GlassCard", () => ({
+jest.mock("@/components/ui/GlassCard", () => ({
   GlassCard: ({ children, className }: { children: React.ReactNode; className?: string }) => (
     <div data-testid="glass-card" className={className}>{children}</div>
   ),
 }));
 
-const mockUseAppStore = useAppStore as unknown as ReturnType<typeof vi.fn>;
+const mockUseAppStore = useAppStore as unknown as ReturnType<typeof jest.fn>;
 
 describe("QualityAgentCard", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    jest.clearAllMocks();
     mockUseAppStore.mockImplementation((selector) => {
       const state = {
         agentEvents: {},
@@ -58,7 +64,7 @@ describe("QualityAgentCard", () => {
 
   it("renders with zero health score when no event", () => {
     render(<QualityAgentCard />);
-    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.getAllByText("—")).toHaveLength(3);
   });
 
   it("renders health score from agent event", () => {
@@ -180,6 +186,6 @@ describe("QualityAgentCard", () => {
     });
 
     render(<QualityAgentCard />);
-    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.getAllByText("—")).toHaveLength(3);
   });
 });

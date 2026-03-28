@@ -1,23 +1,23 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "@jest/globals";
 import { render, screen } from "@testing-library/react";
 import { AnalysisPreview } from "@/components/layout/AnalysisPreview";
 import { useAppStore } from "@/store/useAppStore";
 
-vi.mock("@/store/useAppStore", () => ({
-  useAppStore: vi.fn(),
+jest.mock("@/store/useAppStore", () => ({
+  useAppStore: jest.fn(),
 }));
 
-vi.mock("@/components/ui/GlassCard", () => ({
+jest.mock("@/components/ui/GlassCard", () => ({
   GlassCard: ({ children, className }: { children: React.ReactNode; className?: string }) => (
     <div data-testid="glass-card" className={className}>{children}</div>
   ),
 }));
 
-const mockUseAppStore = useAppStore as unknown as ReturnType<typeof vi.fn>;
+const mockUseAppStore = useAppStore as unknown as ReturnType<typeof jest.fn>;
 
 describe("AnalysisPreview", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    jest.clearAllMocks();
     mockUseAppStore.mockImplementation((selector) => {
       const state = {
         finalResult: null,
@@ -107,7 +107,7 @@ describe("AnalysisPreview", () => {
           code_parser: {},
         },
         isAnalyzing: false,
-        finishedAgents: [],
+        finishedAgents: ["quality"],
       };
       return selector(state);
     });
@@ -124,7 +124,7 @@ describe("AnalysisPreview", () => {
           code_parser: {},
         },
         isAnalyzing: false,
-        finishedAgents: [],
+        finishedAgents: ["quality"],
       };
       return selector(state);
     });
@@ -141,7 +141,7 @@ describe("AnalysisPreview", () => {
           code_parser: {},
         },
         isAnalyzing: false,
-        finishedAgents: [],
+        finishedAgents: ["quality"],
       };
       return selector(state);
     });

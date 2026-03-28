@@ -1,46 +1,48 @@
+import "@testing-library/jest-dom";
 import { cleanup } from "@testing-library/react";
-import { afterEach, vi } from "vitest";
+import { afterEach } from "@jest/globals";
 
-// Cleanup after each test to prevent state leakage between tests
+// Polyfill TextEncoder/TextDecoder for jsdom environment
+if (typeof global.TextEncoder === "undefined") {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { TextEncoder: TE, TextDecoder: TD } = require("util");
+  global.TextEncoder = TE;
+  global.TextDecoder = TD;
+}
+
 afterEach(() => {
   cleanup();
 });
 
 // Mock next/navigation
-vi.mock("next/navigation", () => ({
+jest.mock("next/navigation", () => ({
   useRouter: () => ({
-    push: vi.fn(),
-    replace: vi.fn(),
-    refresh: vi.fn(),
-    back: vi.fn(),
+    push: jest.fn(),
+    replace: jest.fn(),
+    refresh: jest.fn(),
+    back: jest.fn(),
   }),
   usePathname: () => "/",
   useSearchParams: () => new URLSearchParams(),
 }));
 
 // Mock next-auth session
-vi.mock("next-auth/react", () => ({
+jest.mock("next-auth/react", () => ({
   useSession: () => ({
     data: {
       user: { id: "test-user-123", name: "Test User", email: "test@example.com" },
     },
     status: "authenticated",
   }),
-  signIn: vi.fn(),
-  signOut: vi.fn(),
+  signIn: jest.fn(),
+  signOut: jest.fn(),
 }));
 
 // Mock lucide-react icons to avoid render errors
-vi.mock("lucide-react", async () => {
-  const actual = await vi.importActual("lucide-react");
-  return {
-    ...actual,
-    // Fallback icons that render as simple spans
-    BarChart3: () => null,
-    Code2: () => null,
-    // Add more as needed by components
-  };
-});
+jest.mock("lucide-react", () => ({
+  BarChart3: () => null,
+  Code2: () => null,
+}));
 
 // Suppress console.error for expected React warnings during tests
 const originalError = console.error;

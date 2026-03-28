@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach } from "@jest/globals";
 import { act, renderHook } from "@testing-library/react";
 import { useAppStore } from "@/store/useAppStore";
 import type { AgentEventData } from "@/store/useAppStore";

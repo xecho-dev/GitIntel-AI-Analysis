@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "@jest/globals";
 import { cn } from "@/lib/utils";
 
 describe("cn — tailwind-merge utility", () => {

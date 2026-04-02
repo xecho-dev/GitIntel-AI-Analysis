@@ -1,4 +1,5 @@
 import React from "react";
+import { motion } from "motion/react";
 import { ShieldAlert, AlertTriangle, AlertOctagon, CheckCircle2, Package, RefreshCw } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { useAppStore } from "@/store/useAppStore";
@@ -56,10 +57,14 @@ function RiskBadge({ level }: { level: string }) {
 }
 
 export const DependencyAgentCard = () => {
+  const eventsVersion = useAppStore((s) => s.eventsVersion);
   const isAnalyzing = useAppStore((s) => s.isAnalyzing);
+  const activeAgent = useAppStore((s) => s.activeAgent);
   const finishedAgents = useAppStore((s) => s.finishedAgents);
   const depEvent = useAppStore((s) => s.agentEvents["dependency"]);
+
   const depDone = finishedAgents.includes("dependency");
+  const isScanning = isAnalyzing || activeAgent === "dependency";
 
   const raw = depEvent?.data as DependencyData | undefined;
   const total = raw?.total ?? 0;
@@ -77,10 +82,11 @@ export const DependencyAgentCard = () => {
   const showResult = depDone || isAnalyzing;
 
   return (
-    <GlassCard className="p-5">
+    <GlassCard className="p-5 relative" glow={isScanning}>
+      {isScanning && <div className={`absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent ${high > 0 ? "via-rose-400/80" : medium > 0 ? "via-yellow-400/80" : "via-slate-400/80"} to-transparent animate-pulse`} />}
       <div className="flex justify-between items-start mb-4">
         <div className="flex items-center gap-3">
-          <div className={`w-8 h-8 rounded flex items-center justify-center ${meta.bg}`}>
+          <div className={`w-8 h-8 rounded flex items-center justify-center ${isScanning ? meta.bg : meta.bg}`}>
             <Icon size={18} className={meta.color} />
           </div>
           <div>
@@ -92,13 +98,13 @@ export const DependencyAgentCard = () => {
         </div>
         <div className="flex flex-col items-end gap-1">
           <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
-            isAnalyzing
+            isScanning
               ? `${meta.bg} ${meta.color} animate-pulse`
               : depDone
               ? `${meta.bg} ${meta.color}`
               : "bg-slate-700 text-slate-500"
           }`}>
-            {isAnalyzing ? "SCANNING" : depDone ? "DONE" : "IDLE"}
+            {isScanning ? "SCANNING" : depDone ? "DONE" : "IDLE"}
           </span>
           {total > 0 && (
             <span className="text-[9px] text-slate-600">
@@ -109,131 +115,143 @@ export const DependencyAgentCard = () => {
         </div>
       </div>
 
-      {showResult ? (
-        <div className="space-y-3">
-          {/* 进度条 */}
-          <div className="h-2 w-full bg-[#1a1a1a] rounded-full overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all duration-700 ${
-                high > 0 ? "bg-rose-500" : medium > 0 ? "bg-yellow-500" : total === 0 ? "bg-slate-600" : "bg-emerald-500"
-              }`}
-              style={{ width: total > 0 ? "100%" : "100%" }}
-            />
-          </div>
-
-          {total === 0 ? (
-            /* 无依赖文件 */
-            <div className="text-center py-3">
-              <RefreshCw size={20} className="mx-auto text-slate-600 mb-1" />
-              <p className="text-[10px] text-slate-500">未检测到依赖配置文件</p>
-              <p className="text-[9px] text-slate-600 mt-0.5">requirements.txt / package.json 等</p>
+      <motion.div
+        key={showResult ? "result" : "idle"}
+        initial={{ opacity: 0, scale: 0.96 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.96 }}
+        transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+      >
+        {showResult ? (
+          <div className="space-y-3">
+            {/* 进度条 */}
+            <div className="h-2 w-full bg-[#1a1a1a] rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-700 ${
+                  high > 0 ? "bg-rose-500" : medium > 0 ? "bg-yellow-500" : total === 0 ? "bg-slate-600" : "bg-emerald-500"
+                }`}
+                style={{ width: total > 0 ? "100%" : "100%" }}
+              />
             </div>
-          ) : (
-            <>
-              {/* H/M/L 计数条 */}
-              <div className={`grid grid-cols-3 gap-1.5 rounded-lg p-2 border ${meta.border}`}>
-                <div className="text-center">
-                  <p className="text-[8px] text-slate-500 uppercase tracking-wider">高危</p>
-                  <p className={`text-lg font-bold font-mono ${high > 0 ? "text-rose-400" : "text-slate-600"}`}>
-                    {high || "—"}
-                  </p>
-                </div>
-                <div className="text-center border-x border-slate-700/50">
-                  <p className="text-[8px] text-slate-500 uppercase tracking-wider">中危</p>
-                  <p className={`text-lg font-bold font-mono ${medium > 0 ? "text-yellow-400" : "text-slate-600"}`}>
-                    {medium || "—"}
-                  </p>
-                </div>
-                <div className="text-center">
-                  <p className="text-[8px] text-slate-500 uppercase tracking-wider">低危</p>
-                  <p className="text-lg font-bold font-mono text-slate-400">
-                    {low || "—"}
-                  </p>
-                </div>
-              </div>
 
-              {/* 风险等级 */}
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-slate-500">风险等级</span>
-                <RiskBadge level={riskLevel} />
+            {total === 0 && !isScanning ? (
+              <div className="text-center py-3">
+                <RefreshCw size={20} className="mx-auto text-slate-600 mb-1" />
+                <p className="text-[10px] text-slate-500">未检测到依赖配置文件</p>
+                <p className="text-[9px] text-slate-600 mt-0.5">requirements.txt / package.json 等</p>
               </div>
+            ) : total === 0 && isScanning ? (
+              <div className="text-center py-3">
+                <RefreshCw size={20} className="mx-auto text-slate-500 animate-spin mb-1" />
+                <p className="text-[10px] text-slate-500">正在扫描依赖...</p>
+              </div>
+            ) : (
+              <>
+                {/* H/M/L 计数条 */}
+                <div className={`grid grid-cols-3 gap-1.5 rounded-lg p-2 border ${meta.border}`}>
+                  <div className="text-center">
+                    <p className="text-[8px] text-slate-500 uppercase tracking-wider">高危</p>
+                    <p className={`text-lg font-bold font-mono ${high > 0 ? "text-rose-400" : "text-slate-600"}`}>
+                      {high || "—"}
+                    </p>
+                  </div>
+                  <div className="text-center border-x border-slate-700/50">
+                    <p className="text-[8px] text-slate-500 uppercase tracking-wider">中危</p>
+                    <p className={`text-lg font-bold font-mono ${medium > 0 ? "text-yellow-400" : "text-slate-600"}`}>
+                      {medium || "—"}
+                    </p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[8px] text-slate-500 uppercase tracking-wider">低危</p>
+                    <p className="text-lg font-bold font-mono text-slate-400">
+                      {low || "—"}
+                    </p>
+                  </div>
+                </div>
 
-              {/* 风险依赖列表 */}
-              {deps.length > 0 && (
-                <div className="space-y-1">
-                  <p className="text-[9px] text-slate-600 uppercase tracking-wider">风险依赖</p>
-                  <div className="space-y-0.5">
-                    {deps.slice(0, 5).map((d, i) => {
-                      const isHigh = d.risk_level === "high";
-                      return (
-                        <div key={i} className={`flex items-start justify-between gap-2 px-2 py-1 rounded text-[10px] ${isHigh ? "bg-rose-500/10" : "bg-yellow-500/10"}`}>
-                          <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 mt-0.5 ${isHigh ? "bg-rose-400" : "bg-yellow-400"}`} />
-                            <span className={`font-medium truncate ${isHigh ? "text-rose-300" : "text-yellow-300"}`}>
-                              {d.name}
-                            </span>
-                            {d.manager && (
-                              <span className={`text-[8px] px-1 rounded flex-shrink-0 ${MANAGER_COLORS[d.manager] ?? MANAGER_COLORS.unknown}`}>
-                                {d.manager}
+                {/* 风险等级 */}
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-slate-500">风险等级</span>
+                  <RiskBadge level={riskLevel} />
+                </div>
+
+                {/* 风险依赖列表 */}
+                {deps.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-[9px] text-slate-600 uppercase tracking-wider">风险依赖</p>
+                    <div className="space-y-0.5">
+                      {deps.slice(0, 5).map((d, i) => {
+                        const isHigh = d.risk_level === "high";
+                        return (
+                          <div key={i} className={`flex items-start justify-between gap-2 px-2 py-1 rounded text-[10px] ${isHigh ? "bg-rose-500/10" : "bg-yellow-500/10"}`}>
+                            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 mt-0.5 ${isHigh ? "bg-rose-400" : "bg-yellow-400"}`} />
+                              <span className={`font-medium truncate ${isHigh ? "text-rose-300" : "text-yellow-300"}`}>
+                                {d.name}
                               </span>
+                              {d.manager && (
+                                <span className={`text-[8px] px-1 rounded flex-shrink-0 ${MANAGER_COLORS[d.manager] ?? MANAGER_COLORS.unknown}`}>
+                                  {d.manager}
+                                </span>
+                              )}
+                            </div>
+                            {d.version && (
+                              <span className="text-slate-600 flex-shrink-0">@{d.version}</span>
                             )}
                           </div>
-                          {d.version && (
-                            <span className="text-slate-600 flex-shrink-0">@{d.version}</span>
-                          )}
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* 过时依赖警告 */}
+                {outdated.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-[9px] text-slate-600 uppercase tracking-wider">过时依赖</p>
+                    {outdated.map((item, i) => {
+                      const [name, reason] = item.split(": ");
+                      return (
+                        <div key={i} className="flex items-start gap-1.5 px-2 py-1 bg-orange-500/5 rounded border border-orange-500/20">
+                          <span className="w-1.5 h-1.5 rounded-full bg-orange-400 flex-shrink-0 mt-1" />
+                          <div className="flex-1 min-w-0">
+                            <span className="text-[10px] text-orange-300 font-medium">{name}</span>
+                            {reason && <p className="text-[9px] text-orange-400/70 truncate">{reason}</p>}
+                          </div>
                         </div>
                       );
                     })}
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* 过时依赖警告 */}
-              {outdated.length > 0 && (
-                <div className="space-y-1">
-                  <p className="text-[9px] text-slate-600 uppercase tracking-wider">过时依赖</p>
-                  {outdated.map((item, i) => {
-                    const [name, reason] = item.split(": ");
-                    return (
-                      <div key={i} className="flex items-start gap-1.5 px-2 py-1 bg-orange-500/5 rounded border border-orange-500/20">
-                        <span className="w-1.5 h-1.5 rounded-full bg-orange-400 flex-shrink-0 mt-1" />
-                        <div className="flex-1 min-w-0">
-                          <span className="text-[10px] text-orange-300 font-medium">{name}</span>
-                          {reason && <p className="text-[9px] text-orange-400/70 truncate">{reason}</p>}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                {/* 风险摘要 */}
+                {summary.length > 0 && (
+                  <div className="space-y-0.5">
+                    {summary.slice(0, 3).map((line, i) => (
+                      <p key={i} className="text-[9px] text-slate-500 leading-relaxed">
+                        {line}
+                      </p>
+                    ))}
+                  </div>
+                )}
 
-              {/* 风险摘要 */}
-              {summary.length > 0 && (
-                <div className="space-y-0.5">
-                  {summary.slice(0, 3).map((line, i) => (
-                    <p key={i} className="text-[9px] text-slate-500 leading-relaxed">
-                      {line}
-                    </p>
-                  ))}
-                </div>
-              )}
-
-              {/* 无风险时的提示 */}
-              {high === 0 && medium === 0 && total > 0 && (
-                <div className="flex items-center gap-1.5 text-emerald-400/70 text-[10px]">
-                  <CheckCircle2 size={12} />
-                  <span>未发现高危漏洞，依赖管理状态良好</span>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      ) : (
-        <div className="h-32 flex flex-col items-center justify-center text-slate-500 text-xs gap-2">
-          <ShieldAlert size={24} className="opacity-50" />
-          <span>{isAnalyzing ? "正在扫描依赖包..." : "等待分析开始..."}</span>
-        </div>
-      )}
+                {/* 无风险时的提示 */}
+                {high === 0 && medium === 0 && total > 0 && (
+                  <div className="flex items-center gap-1.5 text-emerald-400/70 text-[10px]">
+                    <CheckCircle2 size={12} />
+                    <span>未发现高危漏洞，依赖管理状态良好</span>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="h-32 flex flex-col items-center justify-center text-slate-500 text-xs gap-2">
+            <ShieldAlert size={24} className="opacity-50" />
+            <span>{isScanning ? `正在扫描 (${activeAgent})...` : "等待分析开始..."}</span>
+          </div>
+        )}
+      </motion.div>
     </GlassCard>
   );
 };

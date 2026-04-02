@@ -1,11 +1,8 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React from "react";
 import { useSession } from "next-auth/react";
-import { Search, Zap, Loader2 } from "lucide-react";
-import { motion } from "motion/react";
-import { useAppStore } from "@/store/useAppStore";
-import { analyzeRepo } from "@/lib/api";
+import { AnalyzeInput } from "@/components/layout/AnalyzeInput";
 import { ArchitectureAgentCard } from "@/components/agents/ArchitectureAgentCard";
 import { QualityAgentCard } from "@/components/agents/QualityAgentCard";
 import { DependencyAgentCard } from "@/components/agents/DependencyAgentCard";
@@ -15,40 +12,10 @@ import { AnalysisPreview } from "@/components/layout/AnalysisPreview";
 
 export default function HomePage() {
   const { data: session } = useSession();
-  const isAnalyzing = useAppStore((s) => s.isAnalyzing);
-  const { repoUrl, setRepoUrl, setIsAnalyzing, setError } = useAppStore();
-  const [localRepoUrl, setLocalRepoUrl] = useState(repoUrl);
-
-  const handleAnalyze = useCallback(async () => {
-    if (!localRepoUrl.trim()) {
-      setError("请输入仓库地址");
-      return;
-    }
-    setRepoUrl(localRepoUrl);
-    setIsAnalyzing(true);
-    setError(null);
-
-    const userId = session?.user?.id ?? session?.user?.sub ?? "";
-
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await analyzeRepo(localRepoUrl, undefined, userId, (data: any) => {
-        useAppStore.getState().pushAgentEvent(data);
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "分析失败");
-    } finally {
-      setIsAnalyzing(false);
-    }
-  }, [localRepoUrl, session, setRepoUrl, setIsAnalyzing, setError]);
+  const userId = session?.user?.id ?? session?.user?.sub ?? "";
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
-      className="space-y-10"
-    >
+    <div className="space-y-10">
       <section className="text-center">
         <h1 className="text-4xl font-black mb-2 tracking-tight">
           智能分析工作台
@@ -56,37 +23,7 @@ export default function HomePage() {
         <p className="text-slate-400 font-light">
           输入仓库地址，启动深度架构与风险评估
         </p>
-
-        <div className="relative max-w-3xl mx-auto mt-8 flex gap-3 p-1.5 bg-[#1c2026] rounded-xl border border-white/5 shadow-2xl">
-          <div className="flex-1 flex items-center px-4 gap-3">
-            <Search className="text-slate-500" size={18} />
-            <input
-              type="text"
-              value={localRepoUrl}
-              onChange={(e) => setLocalRepoUrl(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAnalyze()}
-              placeholder="https://github.com/facebook/react"
-              className="bg-transparent border-none text-[#dfe2eb] w-full focus:ring-0 placeholder:text-slate-600 text-sm"
-            />
-          </div>
-          <button
-            onClick={handleAnalyze}
-            disabled={isAnalyzing}
-            className="bg-blue-400 text-blue-950 px-8 py-2.5 font-black text-sm rounded-lg hover:brightness-110 transition-all flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            {isAnalyzing ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                <span>分析中...</span>
-              </>
-            ) : (
-              <>
-                <span>立即分析</span>
-                <Zap size={16} fill="currentColor" />
-              </>
-            )}
-          </button>
-        </div>
+        <AnalyzeInput userId={userId} />
       </section>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
@@ -102,6 +39,6 @@ export default function HomePage() {
           <AnalysisPreview />
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }

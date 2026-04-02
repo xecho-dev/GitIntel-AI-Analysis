@@ -13,6 +13,9 @@ interface AppState {
   isAnalyzing: boolean;
   setIsAnalyzing: (value: boolean) => void;
 
+  // 事件版本号（递增用于强制刷新所有订阅者）
+  eventsVersion: number;
+
   // 当前分析的仓库
   repoUrl: string;
   setRepoUrl: (url: string) => void;
@@ -35,12 +38,18 @@ interface AppState {
   error: string | null;
   setError: (error: string | null) => void;
 
+  // 当前活跃的 Agent（用于扫描动画高亮）
+  activeAgent: string | null;
+  setActiveAgent: (agent: string | null) => void;
+
   // 清除所有状态
   reset: () => void;
 }
 
 const initialState = {
   isAnalyzing: false,
+  eventsVersion: 0,
+  activeAgent: null,
   repoUrl: "https://github.com/xecho-dev/test.git",
   agentEvents: {},
   finishedAgents: [],
@@ -56,6 +65,8 @@ export const useAppStore = create<AppState>((set) => ({
 
   setRepoUrl: (url) => set({ repoUrl: url }),
 
+  setActiveAgent: (agent) => set({ activeAgent: agent }),
+
   pushAgentEvent: (event) =>
     set((state) => {
       const finishedAgents = event.type === "result"
@@ -68,10 +79,10 @@ export const useAppStore = create<AppState>((set) => ({
         : state.finalResult;
 
       return {
+        eventsVersion: state.eventsVersion + 1,
         agentEvents: { ...state.agentEvents, [event.agent]: event },
         finishedAgents,
         finalResult,
-        // 同时兼容旧 analysisResult
         analysisResult: event.type === "result" ? event.data : state.analysisResult,
       };
     }),

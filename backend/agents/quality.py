@@ -1,5 +1,18 @@
-"""QualityAgent — 对仓库源码进行真实代码质量分析（圈复杂度、重复率、代码异味等）。"""
+"""QualityAgent — 对仓库源码进行真实代码质量分析（圈复杂度、重复率、代码异味等）。
+
+该 Agent 综合以下数据源进行 LLM 驱动的代码质量分析：
+  1. tree-sitter AST 分析（圈复杂度、文件大小、重复率、测试覆盖）
+  2. LLM（可选）：生成 MAINT/COMP/DUP/TEST/COUP 五维评分及洞察
+
+输出新增 LLM 五维评分字段：
+  - maint_score: 可维护性 0-100
+  - comp_score:   复杂度   0-100
+  - dup_score:    独特率   0-100
+  - test_score:   测试覆盖 0-100
+  - coup_score:   耦合度   0-100
+"""
 import asyncio
+import logging
 import os
 import re
 import tree_sitter
@@ -7,6 +20,8 @@ from collections import defaultdict
 from typing import AsyncGenerator
 
 from .base_agent import AgentEvent, BaseAgent, _make_event
+
+_logger = logging.getLogger("gitintel")
 
 
 # ── tree-sitter 解析器统一加载（复用 code_parser.py 的修复策略）─────────────
@@ -60,6 +75,92 @@ def _q_load_parser(language: str):
         pass
 
     return None
+
+
+# ─── LLM 懒加载 ────────────────────────────────────────────────────────
+
+def _get_llm():
+    """懒加载 LLM client（当前使用阿里云 DashScope OpenAI 兼容接口）。"""
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if openai_key:
+        try:
+            from langchain_openai import ChatOpenAI
+            return ChatOpenAI(
+                model=os.getenv("OPENAI_MODEL", "qwen-plus"),
+                temperature=0.2,
+                openai_api_key=openai_key,
+                base_url=os.getenv("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+            )
+        except Exception:
+            pass
+    return None
+
+
+def _build_quality_context(
+    py_metrics: dict,
+    ts_metrics: dict,
+    duplication: dict,
+    test_info: dict,
+    health_score: float,
+    complexity_label: str,
+    maintainability: str,
+) -> str:
+    """从各质量指标构建 LLM 分析上下文。"""
+    import json
+
+    parts = []
+
+    # ── 整体评分 ────────────────────────────────────────────────────
+    parts.append(
+        f"【整体评分】\n"
+        f"  健康度: {round(health_score, 1)}/100\n"
+        f"  复杂度: {complexity_label}\n"
+        f"  可维护性: {maintainability}"
+    )
+
+    # ── Python 指标 ─────────────────────────────────────────────────
+    if py_metrics and "error" not in py_metrics:
+        parts.append(
+            f"【Python 质量】\n"
+            f"  函数总数: {py_metrics.get('total_functions', 0)}\n"
+            f"  类总数: {py_metrics.get('total_classes', 0)}\n"
+            f"  平均圈复杂度: {py_metrics.get('avg_complexity', 0)}\n"
+            f"  最大圈复杂度: {py_metrics.get('max_complexity', 0)}\n"
+            f"  高复杂度函数(>10): {py_metrics.get('over_complexity_count', 0)}\n"
+            f"  超长函数(>50行): {len(py_metrics.get('long_functions', []))}"
+        )
+
+    # ── TypeScript 指标 ─────────────────────────────────────────────
+    if ts_metrics and "error" not in ts_metrics:
+        parts.append(
+            f"【TypeScript 质量】\n"
+            f"  函数总数: {ts_metrics.get('total_functions', 0)}\n"
+            f"  类总数: {ts_metrics.get('total_classes', 0)}\n"
+            f"  平均圈复杂度: {ts_metrics.get('avg_complexity', 0)}\n"
+            f"  最大圈复杂度: {ts_metrics.get('max_complexity', 0)}\n"
+            f"  高复杂度函数(>10): {ts_metrics.get('over_complexity_count', 0)}"
+        )
+
+    # ── 重复率 ──────────────────────────────────────────────────────
+    if duplication:
+        parts.append(
+            f"【代码重复】\n"
+            f"  重复率: {duplication.get('score', 0)}%\n"
+            f"  等级: {duplication.get('duplication_level', '?')}\n"
+            f"  重复块数: {duplication.get('duplicated_blocks', 0)}"
+        )
+
+    # ── 测试覆盖 ────────────────────────────────────────────────────
+    if test_info:
+        parts.append(
+            f"【测试覆盖】\n"
+            f"  估算覆盖率: {test_info.get('estimated_coverage', 0)}%\n"
+            f"  测试文件数: {test_info.get('test_files', 0)}\n"
+            f"  源码文件数: {test_info.get('source_files', 0)}\n"
+            f"  检测框架: {', '.join(test_info.get('test_frameworks', []) or ['未检测到'])}"
+        )
+
+    return "\n\n".join(parts) if parts else "（无可用质量数据）"
 
 
 # ─── 工具函数 ───────────────────────────────────────────────────
@@ -205,6 +306,30 @@ class QualityAgent(BaseAgent):
         complexity_label = self._calc_complexity(health_score)
         maintainability = self._calc_maintainability(health_score)
 
+        # ── LLM 五维评分（可选）───────────────────────────────────────
+        llm = _get_llm()
+        llm_metrics: dict = {}
+        if llm is not None:
+            yield _make_event(
+                self.name, "progress",
+                "正在调用 LLM 生成质量评分…", 85, None
+            )
+            try:
+                llm_metrics = await self._generate_llm_insights(
+                    llm,
+                    py_metrics=py_metrics,
+                    ts_metrics=ts_metrics,
+                    duplication=duplication,
+                    test_info=test_info,
+                    health_score=health_score,
+                    complexity_label=complexity_label,
+                    maintainability=maintainability,
+                )
+                _logger.info(f"[QualityAgent] LLM 五维评分成功: {llm_metrics}")
+            except Exception as exc:
+                _logger.error(f"[QualityAgent] LLM 质量分析失败: {exc}")
+                llm_metrics = {}
+
         result = {
             "health_score": round(health_score, 1),
             "test_coverage": test_info.get("estimated_coverage", 0),
@@ -217,6 +342,13 @@ class QualityAgent(BaseAgent):
             "total_files": total_files,
             "python_files": py_files_count,
             "typescript_files": ts_files_count,
+            # LLM 五维评分（0-100，越高越好）
+            "maint_score": llm_metrics.get("maint_score", 70),
+            "comp_score": llm_metrics.get("comp_score", 70),
+            "dup_score": llm_metrics.get("dup_score", round(100 - (duplication.get("score", 0) if duplication else 0), 1)),
+            "test_score": llm_metrics.get("test_score", test_info.get("estimated_coverage", 0)),
+            "coup_score": llm_metrics.get("coup_score", 70),
+            "llmPowered": bool(llm_metrics),
         }
 
         yield _make_event(
@@ -758,3 +890,57 @@ class QualityAgent(BaseAgent):
             score += 5  # 奖励
 
         return max(min(score, 100), 0)
+
+    # ─── LLM 五维评分 ───────────────────────────────────────────────
+
+    @staticmethod
+    async def _generate_llm_insights(
+        llm,
+        py_metrics: dict,
+        ts_metrics: dict,
+        duplication: dict,
+        test_info: dict,
+        health_score: float,
+        complexity_label: str,
+        maintainability: str,
+    ) -> dict:
+        """调用 LLM 生成五维质量评分（可维护性/复杂度/独特率/测试覆盖/耦合度）。
+
+        Returns:
+            dict: 包含 maint_score, comp_score, dup_score, test_score, coup_score (0-100)
+        """
+        import json, re
+
+        context = _build_quality_context(
+            py_metrics, ts_metrics, duplication, test_info,
+            health_score, complexity_label, maintainability,
+        )
+
+        prompt = (
+            "你是一位资深代码质量审计专家，正在分析仓库代码质量。\n\n"
+            f"质量分析数据：\n{context}\n\n"
+            "请基于以上真实代码数据，生成五维质量评分（直接返回 JSON，不要 markdown 包裹）：\n"
+            "{\n"
+            '  "maint_score": 数字(0-100，可维护性得分，越高越好，综合考虑代码复杂度、圈复杂度、超长函数数、高复杂度函数数)，\n'
+            '  "comp_score": 数字(0-100，复杂度合理度得分，越高说明复杂度越可控，参考平均圈复杂度和文件大小)，\n'
+            '  "dup_score": 数字(0-100，独特率得分，由重复率推导，重复率越低得分越高，计算公式：100 - 重复率%)，\n'
+            '  "test_score": 数字(0-100，测试覆盖得分，综合测试文件比例和检测到的测试框架)，\n'
+            '  "coup_score": 数字(0-100，耦合度合理度得分，基于语言数量、框架数量、组件数估算，越高说明模块化越好)\n'
+            "}"
+        )
+
+        try:
+            from langchain_core.messages import HumanMessage
+            response = await llm.ainvoke([HumanMessage(content=prompt)])
+            content = response.content.strip()
+
+            try:
+                match = re.search(r"\{[\s\S]*\}", content)
+                if match:
+                    return json.loads(match.group(0))
+            except json.JSONDecodeError:
+                pass
+        except Exception:
+            pass
+
+        return {}

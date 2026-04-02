@@ -55,7 +55,7 @@ export interface ArchitectureResult {
   llmPowered?: boolean;
 }
 
-// QualityAgent 输出（tree-sitter AST 分析）
+// QualityAgent 输出（tree-sitter AST 分析 + LLM 五维评分）
 export interface QualityResult {
   healthScore: number;
   testCoverage: number;
@@ -76,6 +76,13 @@ export interface QualityResult {
     overComplexityCount: number;
     avgComplexity: number;
   };
+  // LLM 五维评分（0-100，越高越好）
+  maintScore?: number;
+  compScore?: number;
+  dupScore?: number;
+  testScore?: number;
+  coupScore?: number;
+  llmPowered?: boolean;
 }
 
 // DependencyAgent 输出（规则引擎风险评估）

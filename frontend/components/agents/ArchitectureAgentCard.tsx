@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useRef, useEffect } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { Code2, Layers, GitBranch, AlertTriangle } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { useAppStore } from "@/store/useAppStore";
@@ -22,51 +23,88 @@ const COMPLEXITY_COLORS: Record<string, string> = {
 };
 
 export const ArchitectureAgentCard = () => {
+  const eventsVersion = useAppStore((s) => s.eventsVersion);
+  const finishedAgents = useAppStore((s) => s.finishedAgents);
+  const activeAgent = useAppStore((s) => s.activeAgent);
+  const isAnalyzing = useAppStore((s) => s.isAnalyzing);
+
+  // 订阅单个事件（reactively read from agentEvents via eventsVersion trigger）
   const fetchTreeEvent = useAppStore((s) => s.agentEvents["fetch_tree_classify"]);
   const loadP0Event = useAppStore((s) => s.agentEvents["load_p0"]);
+  const loadP1Event = useAppStore((s) => s.agentEvents["load_p1"]);
+  const loadP2Event = useAppStore((s) => s.agentEvents["load_p2"]);
   const codeParserP0Event = useAppStore((s) => s.agentEvents["code_parser_p0"]);
+  const codeParserP1Event = useAppStore((s) => s.agentEvents["code_parser_p1"]);
+  const codeParserFinalEvent = useAppStore((s) => s.agentEvents["code_parser_final"]);
   const archEvent = useAppStore((s) => s.agentEvents["architecture"]);
   const techStackEvent = useAppStore((s) => s.agentEvents["tech_stack"]);
-  const isAnalyzing = useAppStore((s) => s.isAnalyzing);
-  const finishedAgents = useAppStore((s) => s.finishedAgents);
 
   const archDone = finishedAgents.includes("architecture");
   const archData = archEvent?.data as ArchitectureData | undefined;
   const techData = techStackEvent?.data as { languages?: string[]; frameworks?: string[] } | undefined;
 
-  // ── 进度日志行 ──────────────────────────────────────────────
-  const lines: { text: string; color: string }[] = [];
+  const ARCH_AGENTS = new Set([
+    "fetch_tree_classify", "load_p0", "load_p1", "load_p2",
+    "code_parser_p0", "code_parser_p1", "code_parser_final",
+    "architecture", "tech_stack",
+  ]);
+  const isScanning = isAnalyzing && activeAgent !== null && ARCH_AGENTS.has(activeAgent);
 
-  if (isAnalyzing || fetchTreeEvent || loadP0Event || codeParserP0Event) {
-    if (fetchTreeEvent?.message) {
-      lines.push({ text: fetchTreeEvent.message, color: "text-blue-400" });
-    } else if (finishedAgents.includes("fetch_tree_classify")) {
-      lines.push({ text: "文件树获取完成", color: "text-emerald-400" });
-    }
-    if (loadP0Event?.message) {
-      lines.push({ text: loadP0Event.message, color: "text-blue-400" });
-    } else if (finishedAgents.includes("load_p0")) {
-      lines.push({ text: "核心文件加载完成", color: "text-emerald-400" });
-    }
-    if (codeParserP0Event?.message) {
-      lines.push({ text: codeParserP0Event.message, color: "text-blue-400" });
-    } else if (finishedAgents.includes("code_parser_p0")) {
-      lines.push({ text: "代码结构解析完成", color: "text-emerald-400" });
-    }
-  } else if (archDone && archData) {
-    lines.push({ text: "架构评估完成", color: "text-emerald-400" });
-  }
+  // ── 累加进度日志 ──────────────────────────────────────────────
+  const linesRef = useRef<{ text: string; color: string }[]>([]);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  // ── 状态标签 ─────────────────────────────────────────────────
-  const statusLabel = isAnalyzing
-    ? "LIVE"
+  useEffect(() => {
+    if (!isAnalyzing) {
+      linesRef.current = [];
+      return;
+    }
+
+    const subAgents = [
+      { event: fetchTreeEvent, key: "fetch_tree_classify", done: finishedAgents.includes("fetch_tree_classify"), doneText: "✓ 文件树获取完成" },
+      { event: loadP0Event, key: "load_p0", done: finishedAgents.includes("load_p0"), doneText: "✓ 核心文件加载完成" },
+      { event: loadP1Event, key: "load_p1", done: finishedAgents.includes("load_p1"), doneText: "✓ 次要文件加载完成" },
+      { event: loadP2Event, key: "load_p2", done: finishedAgents.includes("load_p2"), doneText: "✓ 文档文件加载完成" },
+      { event: codeParserP0Event, key: "code_parser_p0", done: finishedAgents.includes("code_parser_p0"), doneText: "✓ 核心代码结构解析完成" },
+      { event: codeParserP1Event, key: "code_parser_p1", done: finishedAgents.includes("code_parser_p1"), doneText: "✓ 次要代码结构解析完成" },
+      { event: codeParserFinalEvent, key: "code_parser_final", done: finishedAgents.includes("code_parser_final"), doneText: "✓ 架构综合分析完成" },
+      { event: techStackEvent, key: "tech_stack", done: finishedAgents.includes("tech_stack"), doneText: "✓ 技术栈识别完成" },
+      { event: archEvent, key: "architecture", done: finishedAgents.includes("architecture"), doneText: "✓ 架构评估完成" },
+    ];
+
+    for (const sub of subAgents) {
+      if (!linesRef.current.find((l) => l.text === sub.doneText)) {
+        if (sub.event?.message && !sub.done) {
+          linesRef.current = linesRef.current.filter((l) => l.text !== sub.doneText);
+          linesRef.current.push({ text: sub.event.message, color: "text-blue-400" });
+        } else if (sub.done) {
+          linesRef.current = linesRef.current.filter(
+            (l) => l.text !== sub.event?.message && l.text !== sub.doneText
+          );
+          linesRef.current.push({ text: sub.doneText, color: "text-emerald-400" });
+        }
+      }
+    }
+
+    linesRef.current = linesRef.current.slice(-20);
+
+    // 新行追加后自动滚到底部
+    requestAnimationFrame(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    });
+  }, [isAnalyzing, eventsVersion]);
+
+  const statusLabel = isScanning
+    ? activeAgent === "architecture" ? "ANALYZING" : "SCANNING"
     : archDone
     ? "DONE"
     : "IDLE";
 
   return (
-    <GlassCard className="p-5 relative border-l-2 border-blue-400" glow>
-      <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-blue-400/50 to-transparent animate-pulse" />
+    <GlassCard className="p-5 relative border-l-2" glow={isScanning}>
+      {isScanning && <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-blue-400/80 to-transparent animate-pulse" />}
 
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
@@ -83,8 +121,8 @@ export const ArchitectureAgentCard = () => {
         </div>
         <span
           className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-            isAnalyzing
-              ? "bg-blue-500/20 text-blue-400 animate-pulse"
+            isScanning
+              ? "bg-blue-500/30 text-blue-400 animate-pulse"
               : "bg-emerald-500/20 text-emerald-400"
           }`}
         >
@@ -93,8 +131,16 @@ export const ArchitectureAgentCard = () => {
       </div>
 
       {/* ── 真实分析结果 ── */}
-      {archData ? (
-        <div className="space-y-3">
+      <AnimatePresence mode="wait">
+        {archData ? (
+          <motion.div
+            key="result"
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.96 }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            className="space-y-3"
+          >
           {/* 核心指标 */}
           <div className="grid grid-cols-2 gap-2">
             <div className="bg-[#1c2330] rounded p-2 border border-white/5">
@@ -191,23 +237,35 @@ export const ArchitectureAgentCard = () => {
               {archData.summary}
             </p>
           )}
-        </div>
+        </motion.div>
       ) : (
         /* ── 加载中 / 无数据状态 ── */
-        <div className="bg-[#0a0e14] rounded p-4 font-mono text-[11px] h-48 overflow-y-auto border border-white/5 space-y-1">
-          {lines.map((line, i) => (
+        <motion.div
+          key="idle"
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.96 }}
+          transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+          ref={scrollRef}
+          className="bg-[#0a0e14] rounded p-4 font-mono text-[11px] h-48 overflow-y-auto border border-white/5 space-y-1"
+          style={{ paddingBottom: "2.5rem" }}
+        >
+          {linesRef.current.map((line, i) => (
             <p key={i} className={line.color}>
               {line.text}
             </p>
           ))}
-          {isAnalyzing && (
-            <p className="text-blue-400 animate-pulse">_ 正在分析中...</p>
+          {isScanning && (
+            <p className="text-blue-400 animate-pulse">
+              ▌ {activeAgent}...
+            </p>
           )}
-          {!isAnalyzing && lines.length === 0 && (
+          {!isAnalyzing && linesRef.current.length === 0 && (
             <p className="text-slate-600">等待分析开始...</p>
           )}
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </GlassCard>
   );
 };

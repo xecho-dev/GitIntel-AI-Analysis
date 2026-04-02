@@ -1,4 +1,5 @@
 import React from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { Zap, Rocket } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { useAppStore } from "@/store/useAppStore";
@@ -24,23 +25,28 @@ const PRIORITY_STYLES: Record<string, { bg: string; text: string }> = {
 };
 
 export const OptimizationAgentCard = () => {
+  const eventsVersion = useAppStore((s) => s.eventsVersion);
   const isAnalyzing = useAppStore((s) => s.isAnalyzing);
+  const activeAgent = useAppStore((s) => s.activeAgent);
   const finishedAgents = useAppStore((s) => s.finishedAgents);
   const suggestionEvent = useAppStore((s) => s.agentEvents["optimization"]);
+
   const suggestionDone = finishedAgents.includes("optimization");
+  const isScanning = isAnalyzing || activeAgent === "optimization";
 
   const raw = suggestionEvent?.data as SuggestionData | undefined;
   const suggestions = raw?.suggestions ?? [];
   const displaySuggestions = suggestions.slice(0, 3);
 
-  const statusLabel = isAnalyzing
-    ? "AI GENERATING"
+  const statusLabel = isScanning
+    ? "GENERATING"
     : suggestionDone
     ? "DONE"
     : "IDLE";
 
   return (
-    <GlassCard className="p-5">
+    <GlassCard className="p-5 relative" glow={isScanning}>
+      {isScanning && <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-purple-400/80 to-transparent animate-pulse" />}
       <div className="flex justify-between items-start mb-4">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded bg-purple-500/10 flex items-center justify-center text-purple-400">
@@ -55,8 +61,8 @@ export const OptimizationAgentCard = () => {
         </div>
         <span
           className={`text-[10px] px-2 py-0.5 rounded font-bold ${
-            isAnalyzing
-              ? "bg-purple-500/20 text-purple-400 animate-pulse"
+            isScanning
+              ? "bg-purple-500/30 text-purple-400 animate-pulse"
               : suggestionDone
               ? "bg-emerald-500/20 text-emerald-400"
               : "bg-slate-700 text-slate-500"
@@ -66,16 +72,27 @@ export const OptimizationAgentCard = () => {
         </span>
       </div>
 
-      {displaySuggestions.length > 0 ? (
-        <div className="space-y-3">
-          {displaySuggestions.map((item, i) => {
-            const pStyle = PRIORITY_STYLES[item.priority ?? "medium"] ?? PRIORITY_STYLES.medium;
-            return (
-              <div
-                key={i}
-                className="p-3 bg-[#31353c] rounded border-l-2 border-purple-400 flex flex-col justify-between"
-                style={{ opacity: item.done ? 1 : 0.8 }}
-              >
+      <AnimatePresence mode="wait">
+        {displaySuggestions.length > 0 ? (
+          <motion.div
+            key="suggestions"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, scale: 0.96 }}
+            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+            className="space-y-3"
+          >
+            {displaySuggestions.map((item, i) => {
+              const pStyle = PRIORITY_STYLES[item.priority ?? "medium"] ?? PRIORITY_STYLES.medium;
+              return (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 12, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ duration: 0.35, delay: i * 0.07, ease: [0.22, 1, 0.36, 1] }}
+                  className="p-3 bg-[#31353c] rounded border-l-2 border-purple-400 flex flex-col justify-between"
+                  style={{ opacity: item.done ? 1 : 0.8 }}
+                >
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-[10px] font-bold text-purple-400 uppercase">
@@ -96,16 +113,24 @@ export const OptimizationAgentCard = () => {
                     <span>一键提交 PR</span>
                   </button>
                 </div>
-              </div>
+              </motion.div>
             );
           })}
-        </div>
-      ) : (
-        <div className="flex flex-col items-center justify-center h-32 text-slate-500 text-xs gap-2">
-          <Zap size={24} className="opacity-50" />
-          <span>{isAnalyzing ? "正在生成优化建议..." : "暂无优化建议"}</span>
-        </div>
-      )}
+        </motion.div>
+        ) : (
+          <motion.div
+            key="idle"
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.96 }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            className="flex flex-col items-center justify-center h-32 text-slate-500 text-xs gap-2"
+          >
+            <Zap size={24} className="opacity-50" />
+            <span>{isScanning ? "正在生成优化建议..." : "等待分析开始..."}</span>
+          </motion.div>
+        )}
+        </AnimatePresence>
     </GlassCard>
   );
 };

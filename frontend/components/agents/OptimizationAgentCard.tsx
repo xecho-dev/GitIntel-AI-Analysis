@@ -36,7 +36,6 @@ export const OptimizationAgentCard = () => {
 
   const raw = suggestionEvent?.data as SuggestionData | undefined;
   const suggestions = raw?.suggestions ?? [];
-  const displaySuggestions = suggestions.slice(0, 3);
 
   const statusLabel = isScanning
     ? "GENERATING"
@@ -73,16 +72,16 @@ export const OptimizationAgentCard = () => {
       </div>
 
       <AnimatePresence mode="wait">
-        {displaySuggestions.length > 0 ? (
+        {suggestions.length > 0 ? (
           <motion.div
             key="suggestions"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, scale: 0.96 }}
             transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            className="space-y-3"
+            className="space-y-3 overflow-y-auto max-h-80 pr-1 scrollbar-thin"
           >
-            {displaySuggestions.map((item, i) => {
+            {suggestions.map((item, i) => {
               const pStyle = PRIORITY_STYLES[item.priority ?? "medium"] ?? PRIORITY_STYLES.medium;
               return (
                 <motion.div

@@ -34,8 +34,8 @@ export default function HomePage() {
           <OptimizationAgentCard />
         </div>
 
-        <div className="xl:col-span-3 space-y-6">
-          <PricingSidebar />
+        <div className="xl:col-span-3">
+          {/* <PricingSidebar /> */}
           <AnalysisPreview />
         </div>
       </div>

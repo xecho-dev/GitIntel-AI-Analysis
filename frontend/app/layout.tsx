@@ -23,6 +23,9 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "GitIntel AI Analysis",
   description: "AI 驱动的 GitHub 仓库智能分析工具",
+  icons: {
+    icon: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({

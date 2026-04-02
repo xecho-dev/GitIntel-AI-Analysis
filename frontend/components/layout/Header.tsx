@@ -31,6 +31,10 @@ export const Header = () => {
     signOut({ callbackUrl: "/login" });
   };
 
+  const goToAccount = () => {
+    window.open(`https://github.com/${session?.user?.login}`, "_blank");
+  };
+
   if (isLoginPage) return null;
 
   return (
@@ -64,20 +68,20 @@ export const Header = () => {
       </div>
 
       <div className="flex items-center gap-4">
-        <button className="hidden md:block px-4 py-1.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-sm hover:bg-blue-500/20 transition-all font-medium text-xs uppercase tracking-widest">
+        {/* <button className="hidden md:block px-4 py-1.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-sm hover:bg-blue-500/20 transition-all font-medium text-xs uppercase tracking-widest">
           升级专业版
-        </button>
+        </button> */}
 
         <div className="flex items-center gap-2">
-          <button className="p-2 text-slate-400 hover:bg-white/5 rounded-full transition-colors">
+          {/* <button className="p-2 text-slate-400 hover:bg-white/5 rounded-full transition-colors">
             <Bell size={20} />
-          </button>
+          </button> */}
 
           {status === "loading" ? (
             <div className="w-8 h-8 rounded bg-slate-800 animate-pulse" />
           ) : session?.user ? (
             <>
-              <div className="flex items-center gap-2 px-2">
+              <div className="flex items-center gap-2 px-2" onClick={goToAccount}>
                 <Github size={14} className="text-slate-400" />
                 <span className="text-xs text-slate-300 hidden md:block">
                   {(session.user as { login?: string }).login ?? session.user.name}

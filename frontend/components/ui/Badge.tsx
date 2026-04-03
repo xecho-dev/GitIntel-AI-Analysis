@@ -5,6 +5,7 @@ type BadgeVariant = "primary" | "secondary" | "tertiary" | "error" | "outline";
 interface BadgeProps {
   children: React.ReactNode;
   variant?: BadgeVariant;
+  className?: string;
 }
 
 const variants: Record<BadgeVariant, string> = {
@@ -15,12 +16,13 @@ const variants: Record<BadgeVariant, string> = {
   outline: "border-white/10 text-slate-400",
 };
 
-export const Badge = ({ children, variant = "primary" }: BadgeProps) => {
+export const Badge = ({ children, variant = "primary", className }: BadgeProps) => {
   return (
     <span
       className={cn(
         "px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border rounded-sm",
-        variants[variant]
+        variants[variant],
+        className
       )}
     >
       {children}

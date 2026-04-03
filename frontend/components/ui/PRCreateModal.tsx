@@ -90,8 +90,8 @@ export const PRCreateModal: React.FC<PRCreateModalProps> = ({
 
       const data = await res.json();
       if (data.success && data.fixes?.length > 0) {
-        setFixes(data.fixes);
-        setEditedValues(data.fixes.map((f) => f.updated));
+        setFixes(data.fixes as CodeFix[]);
+        setEditedValues((data.fixes as CodeFix[]).map((f) => f.updated));
         setModalState("preview");
       } else {
         // 如果没有生成修改，创建一个默认修改

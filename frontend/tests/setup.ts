@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom";
 import { cleanup } from "@testing-library/react";
-import { afterEach } from "@jest/globals";
+// NOTE: afterEach/describe/it/etc. are available globally via @types/jest.
+// Ensure tsconfig includes "jest" in its "types" array (e.g. "types": ["jest", "@types/testing-library__jest-dom"]).
 
 // Polyfill TextEncoder/TextDecoder for jsdom environment
 if (typeof global.TextEncoder === "undefined") {

@@ -26,12 +26,27 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import type { UserProfile, HistoryStats } from "@/lib/types";
 
+// Extended session user from next-auth (matches lib/auth.ts module augmentation)
+interface SessionUser {
+  id?: string;
+  name?: string | null;
+  email?: string | null;
+  image?: string | null;
+  login?: string;
+  sub?: string;
+  bio?: string | null;
+  company?: string | null;
+  location?: string | null;
+  blog?: string | null;
+  public_repos?: number;
+  followers?: number;
+  following?: number;
+}
+
 export default function AccountPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const sessionProfile = session?.user as
-    | (UserProfile & { login?: string; image?: string | null })
-    | undefined;
+  const sessionProfile = session?.user as SessionUser | undefined;
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<HistoryStats | null>(null);
@@ -51,11 +66,11 @@ export default function AccountPage() {
           login: sessionProfile.login,
           name: sessionProfile.name,
           email: sessionProfile.email,
-          avatar_url: sessionProfile.image,
-          bio: (sessionProfile as Record<string, unknown>)?.bio as string | undefined,
-          location: (sessionProfile as Record<string, unknown>)?.location as string | undefined,
-          company: (sessionProfile as Record<string, unknown>)?.company as string | undefined,
-          blog: (sessionProfile as Record<string, unknown>)?.blog as string | undefined,
+          avatar_url: sessionProfile.image ?? null,
+          bio: sessionProfile.bio ?? undefined,
+          location: sessionProfile.location ?? undefined,
+          company: sessionProfile.company ?? undefined,
+          blog: sessionProfile.blog ?? undefined,
         }),
       });
 
@@ -143,13 +158,13 @@ export default function AccountPage() {
     email: sessionProfile.email,
     avatar_url: avatarUrl,
     name: sessionProfile.name,
-    bio: (sessionProfile as Record<string, unknown>)?.bio as string | undefined,
-    company: (sessionProfile as Record<string, unknown>)?.company as string | undefined,
-    location: (sessionProfile as Record<string, unknown>)?.location as string | undefined,
-    blog: (sessionProfile as Record<string, unknown>)?.blog as string | undefined,
-    public_repos: (sessionProfile as Record<string, unknown>)?.public_repos as number ?? 0,
-    followers: (sessionProfile as Record<string, unknown>)?.followers as number ?? 0,
-    following: (sessionProfile as Record<string, unknown>)?.following as number ?? 0,
+    bio: sessionProfile.bio ?? undefined,
+    company: sessionProfile.company ?? undefined,
+    location: sessionProfile.location ?? undefined,
+    blog: sessionProfile.blog ?? undefined,
+    public_repos: sessionProfile.public_repos ?? 0,
+    followers: sessionProfile.followers ?? 0,
+    following: sessionProfile.following ?? 0,
     created_at: "",
     updated_at: "",
   };

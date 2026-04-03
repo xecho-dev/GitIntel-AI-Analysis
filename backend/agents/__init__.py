@@ -1,5 +1,5 @@
 from .base_agent import BaseAgent, AgentEvent, _make_event
-from .repo_loader import RepoLoaderAgent
+from .repo_loader import RepoLoaderAgent, GitHubPermissionError
 from .code_parser import CodeParserAgent
 from .tech_stack import TechStackAgent
 from .quality import QualityAgent
@@ -12,6 +12,7 @@ __all__ = [
     "AgentEvent",
     "_make_event",
     "RepoLoaderAgent",
+    "GitHubPermissionError",
     "CodeParserAgent",
     "TechStackAgent",
     "QualityAgent",

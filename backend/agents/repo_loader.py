@@ -54,6 +54,13 @@ import httpx
 from .base_agent import AgentEvent, BaseAgent, _make_event
 
 
+# ─── Custom Exceptions ─────────────────────────────────────────────
+
+class GitHubPermissionError(Exception):
+    """GitHub Token 缺少 public_repo 权限，无法访问他人仓库"""
+    pass
+
+
 # ─── GitHub API 请求头 ────────────────────────────────────────────────
 
 GITHUB_API_BASE_URL = os.getenv("GITHUB_API_BASE_URL", "https://api.github.com")
@@ -718,18 +725,7 @@ class RepoLoaderAgent(BaseAgent):
     # ── GitHub API ─────────────────────────────────────────────────
 
     async def _get_default_branch(self, owner: str, repo: str, branch: str) -> str | None:
-        if branch:
-            try:
-                async with httpx.AsyncClient(timeout=15.0) as client:
-                    resp = await client.get(
-                        f"{GITHUB_API_BASE_URL}/repos/{owner}/{repo}/branches/{branch}",
-                        headers=_build_headers(),
-                    )
-                    if resp.status_code == 200:
-                        return resp.json().get("commit", {}).get("sha")
-            except Exception:
-                pass
-
+        # 第一步：获取仓库默认分支（此 API 同时验证仓库可访问性）
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 resp = await client.get(
@@ -738,13 +734,38 @@ class RepoLoaderAgent(BaseAgent):
                 )
                 if resp.status_code == 200:
                     default_branch = resp.json().get("default_branch", "main")
-                    target = branch or default_branch
+                    # 用户指定了分支 → 优先使用用户指定的
+                    # 用户没指定 → 使用仓库默认分支
+                    target = branch if branch not in (None, "", "main") else default_branch
+                    # 验证目标分支是否存在
                     branch_resp = await client.get(
                         f"{GITHUB_API_BASE_URL}/repos/{owner}/{repo}/branches/{target}",
                         headers=_build_headers(),
                     )
                     if branch_resp.status_code == 200:
                         return branch_resp.json().get("commit", {}).get("sha")
+                    elif branch_resp.status_code in (401, 403):
+                        raise GitHubPermissionError(
+                            f"无法访问仓库 {owner}/{repo} 的分支 '{target}'（状态码 {branch_resp.status_code}），"
+                            f"请检查 GITHUB_TOKEN 是否有效，以及是否具有 public_repo 权限。"
+                        )
+                    elif branch_resp.status_code == 404:
+                        # 分支不存在，给出更清晰的提示
+                        raise GitHubPermissionError(
+                            f"仓库 {owner}/{repo} 中不存在分支 '{target}'。"
+                            f"该仓库的默认分支为 '{default_branch}'，请确认分支名称是否正确。"
+                        )
+                elif resp.status_code in (401, 403):
+                    raise GitHubPermissionError(
+                        f"无法访问仓库 {owner}/{repo}（状态码 {resp.status_code}），"
+                        f"请检查 GITHUB_TOKEN 是否有效，以及是否具有 public_repo 权限。"
+                    )
+                elif resp.status_code == 404:
+                    raise GitHubPermissionError(
+                        f"仓库 {owner}/{repo} 不存在或无权访问（状态码 404）"
+                    )
+        except GitHubPermissionError:
+            raise
         except Exception:
             pass
         return None

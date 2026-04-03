@@ -42,7 +42,8 @@ export const PRCreateModal: React.FC<PRCreateModalProps> = ({
   const [modalState, setModalState] = useState<ModalState>("generating");
   const [fixes, setFixes] = useState<CodeFix[]>([]);
   const [errorMsg, setErrorMsg] = useState("");
-  const [prResult, setPrResult] = useState<{ url: string; number: number; title: string } | null>(null);
+  const [prResult, setPrResult] = useState<{ url: string; number: number; title: string; is_fork: boolean; fork_url: string } | null>(null);
+  const [commitMessage, setCommitMessage] = useState("");
 
   // 弹窗打开时自动触发生成
   useEffect(() => {
@@ -59,6 +60,7 @@ export const PRCreateModal: React.FC<PRCreateModalProps> = ({
     setErrorMsg("");
     setFixes([]);
     setPrResult(null);
+    setCommitMessage("");
 
     try {
       const res = await fetch("/api/pr/generate", {
@@ -114,6 +116,10 @@ export const PRCreateModal: React.FC<PRCreateModalProps> = ({
     setModalState("creating");
     setErrorMsg("");
 
+    // 与输入框 placeholder 一致：未输入时用建议首行；用于 commit 与 PR 标题（GitHub 列表显示的是 PR 标题）
+    const resolvedCommit =
+      commitMessage.trim() || suggestion?.reason?.split("\n")[0] || undefined;
+
     try {
       const res = await fetch("/api/pr/create", {
         method: "POST",
@@ -122,6 +128,8 @@ export const PRCreateModal: React.FC<PRCreateModalProps> = ({
           repo_url: repoUrl,
           branch: branch,
           fixes: fixes,
+          commit_message: resolvedCommit,
+          pr_title: resolvedCommit,
         }),
       });
 
@@ -135,13 +143,15 @@ export const PRCreateModal: React.FC<PRCreateModalProps> = ({
         url: data.pr_url,
         number: data.pr_number,
         title: data.pr_title,
+        is_fork: data.is_fork ?? false,
+        fork_url: data.fork_url ?? "",
       });
       setModalState("success");
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "创建 PR 失败");
       setModalState("error");
     }
-  }, [repoUrl, branch, fixes]);
+  }, [repoUrl, branch, fixes, commitMessage, suggestion]);
 
   const getLanguage = (file: string): string => {
     if (file.endsWith(".py")) return "python";
@@ -337,6 +347,20 @@ export const PRCreateModal: React.FC<PRCreateModalProps> = ({
                   </span>
                 </div>
 
+                {/* 统一 commit message */}
+                <div className="flex items-center gap-3 px-4 py-3 bg-white/[0.02] border border-white/5 rounded-xl">
+                  <span className="text-xs text-slate-500 shrink-0">Commit:</span>
+                  <input
+                    type="text"
+                    placeholder={suggestion?.reason?.split("\n")[0] || "描述此次修改内容..."}
+                    value={commitMessage}
+                    onChange={(e) => setCommitMessage(e.target.value)}
+                    className="flex-1 bg-transparent text-sm text-slate-200 placeholder-slate-600 outline-none border-none"
+                    maxLength={72}
+                  />
+                  <span className="text-xs text-slate-600">{commitMessage.length}/72</span>
+                </div>
+
                 {fixes.map((fix, idx) => (
                   <div
                     key={idx}
@@ -359,11 +383,11 @@ export const PRCreateModal: React.FC<PRCreateModalProps> = ({
                       <span className="text-sm font-mono text-slate-300 truncate flex-1">
                         {fix.file}
                       </span>
-                      {fix.reason && (
+                      {/* {fix.reason && (
                         <span className="text-xs text-slate-500 truncate max-w-[200px]">
                           {fix.reason.slice(0, 50)}
                         </span>
-                      )}
+                      )} */}
                     </div>
 
                     {/* Diff Editor - 左右分栏 */}
@@ -454,6 +478,23 @@ export const PRCreateModal: React.FC<PRCreateModalProps> = ({
                 <p className="text-xs text-slate-600 mt-3">
                   PR #{prResult?.number} · {repoUrl}
                 </p>
+                {prResult?.is_fork && (
+                  <div className="mt-3 px-3 py-2 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                    <p className="text-xs text-blue-400">
+                      此仓库为 Fork，代码已提交到你的仓库。
+                    </p>
+                    {prResult?.fork_url && (
+                      <a
+                        href={prResult.fork_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-300 underline hover:text-blue-200"
+                      >
+                        查看你的 Fork →
+                      </a>
+                    )}
+                  </div>
+                )}
               </div>
               {prResult?.url && (
                 <a

@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { repo_url, branch, fixes, base_branch, pr_title } = body;
+  const { repo_url, branch, fixes, base_branch, pr_title, commit_message } = body;
 
   if (!repo_url || !fixes) {
     return NextResponse.json(
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
       "Content-Type": "application/json",
       "X-User-Id": userId,
     },
-    body: JSON.stringify({ repo_url, branch, fixes, base_branch, pr_title }),
+    body: JSON.stringify({ repo_url, branch, fixes, base_branch, pr_title, commit_message }),
   });
 
   if (!upstream.ok) {
@@ -40,5 +40,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: err.detail ?? "创建 PR 失败" }, { status: upstream.status });
   }
 
-  return NextResponse.json(await upstream.json());
+  const data = await upstream.json();
+  return NextResponse.json({
+    pr_url: data.pr_url,
+    pr_number: data.pr_number,
+    pr_title: data.pr_title,
+    is_fork: data.is_fork ?? false,
+    fork_url: data.fork_url ?? "",
+  });
 }

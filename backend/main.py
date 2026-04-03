@@ -330,6 +330,7 @@ class PRCreateRequest(BaseModel):
     fixes: list[dict]  # FixGeneratorAgent 返回的修改方案
     base_branch: str | None = None
     pr_title: str | None = None
+    commit_message: str | None = None  # 自定义 commit message，为空时使用 fix.reason
 
 
 @app.post("/api/pr/generate")
@@ -390,6 +391,7 @@ async def api_pr_create(req: PRCreateRequest, request: Request):
         fixes=req.fixes,
         base_branch=req.base_branch,
         pr_title=req.pr_title,
+        commit_message=req.commit_message,
     )
 
     if not result.success:
@@ -400,6 +402,8 @@ async def api_pr_create(req: PRCreateRequest, request: Request):
         "pr_url": result.pr_url,
         "pr_number": result.pr_number,
         "pr_title": result.pr_title,
+        "is_fork": result.is_fork,
+        "fork_url": result.fork_url,
     }
 
 

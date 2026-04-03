@@ -3,7 +3,7 @@ import asyncio
 import os
 import tree_sitter
 from collections import defaultdict
-from collections import defaultdict
+from typing import AsyncGenerator
 
 from .base_agent import AgentEvent, BaseAgent, _make_event
 
@@ -155,6 +155,23 @@ class CodeParserAgent(BaseAgent):
     """遍历仓库源码文件，执行 AST 解析，提取结构化指标。"""
 
     name = "code_parser"
+
+    # 实现抽象方法；实际业务由 node_* 函数直接调用 _analyze_inmemory_files
+    async def stream(
+        self, repo_path: str, branch: str = "main", **kwargs
+    ) -> AsyncGenerator[AgentEvent, None]:
+        file_contents: dict | None = kwargs.get("file_contents")
+        if not file_contents:
+            yield _make_event(self.name, "status", "无文件内容待解析", 100, None)
+            return
+
+        files = [{"path": path, "content": content} for path, content in file_contents.items()]
+        yield _make_event(self.name, "status", f"正在解析 {len(files)} 个文件...", 20, None)
+        result = await self._analyze_inmemory_files(files)
+        yield _make_event(
+            self.name, "result", "代码解析完成",
+            100, result
+        )
 
     # ─── 内部实现 ───────────────────────────────────────────────
 

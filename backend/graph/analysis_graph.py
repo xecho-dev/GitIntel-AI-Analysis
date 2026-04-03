@@ -81,6 +81,7 @@ from langgraph.graph import StateGraph, END
 
 from agents import (
     RepoLoaderAgent,
+    GitHubPermissionError,
     CodeParserAgent,
     TechStackAgent,
     QualityAgent,
@@ -930,6 +931,14 @@ async def _stream_analysis_impl(
             "percent": 15,
             "data": {"total_files": len(tree_items)},
         })
+    except GitHubPermissionError as e:
+        logger.error(f"[stream_analysis_sse] GitHub 权限不足: {e}")
+        yield format_sse_error(
+            "fetch_tree_classify",
+            f"GitHub Token 权限不足，无法访问他人仓库。请前往 https://github.com/settings/tokens 重新生成 Token，勾选 'public_repo' 权限后重试。详细原因: {str(e)}"
+        )
+        yield "data: [DONE]\n\n"
+        return
     except Exception as e:
         logger.error(f"[stream_analysis_sse] 获取文件树异常: {e}")
         yield format_sse_error("fetch_tree_classify", f"获取文件树失败: {str(e)}")

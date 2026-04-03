@@ -36,12 +36,15 @@ def _get_llm():
 
 # ─── 代码摘要工具 ────────────────────────────────────────────────────────────
 
+def _empty_fix() -> dict:
+    """返回空 code_fix（规则引擎建议无具体代码修改时使用）。"""
+    return {"file": "", "type": "replace", "original": "", "updated": "", "reason": ""}
+
+
 def _summarize_code_snippet(content: str, max_lines: int = 60) -> str:
     """截取代码片段的核心部分（去除空行和过长空白）。"""
     lines = content.splitlines()
-    # 取前 max_lines
     snippet = "\n".join(lines[:max_lines])
-    # 折叠连续空行
     snippet = re.sub(r"\n{3,}", "\n\n", snippet)
     return snippet.strip()
 
@@ -78,24 +81,23 @@ def _build_llm_context(
         ]
         parts.append("【代码结构】\n" + "\n".join(stats_lines))
 
-        # 附上最大文件的代码片段（供 LLM 深入分析）
+        # 附上代码片段（供 LLM 生成 code_fix）
+        # 优先用 file_contents（完整内容），其次用 chunked_files
         if largest:
             top_files = sorted(largest, key=lambda x: x.get("lines", 0), reverse=True)[:3]
             for f in top_files:
                 fpath = f["path"]
-                # 从 chunked 提取代码片段
-                snippet = ""
-                if fpath in chunked and chunked[fpath]:
-                    # 取第一个语义块（前60行）
-                    chunk = chunked[fpath][0]
-                    snippet = chunk.get("content", "")[:2000]
-                elif file_contents and fpath in file_contents:
-                    snippet = _summarize_code_snippet(file_contents[fpath], max_lines=60)
+                fname = fpath.split("/")[-1]
+                # 优先取完整文件内容，其次取 chunked 内容
+                content = ""
+                if file_contents and fpath in file_contents:
+                    content = file_contents[fpath]
+                elif fpath in chunked and chunked[fpath]:
+                    content = "\n".join(c.get("content", "") for c in chunked[fpath])
 
-                if snippet:
-                    fname = fpath.split("/")[-1]
-                    parts.append(f"\n  -- 代码片段 [{fname}]({f['lines']}行) --")
-                    parts.append(snippet[:1800])
+                if content:
+                    parts.append(f"\n  -- [{fname}]({f['lines']}行) --")
+                    parts.append(content[:4000])
 
     # ── 2. 技术栈 ────────────────────────────────────────────────────────────
     if tech_stack_result:
@@ -320,7 +322,11 @@ class SuggestionAgent(BaseAgent):
         context: str,
         next_id,
     ) -> list[dict]:
-        """调用 LLM，基于真实代码内容生成优化建议。"""
+        """调用 LLM，基于真实代码内容生成优化建议。
+
+        每条建议必须包含：id, type, title, description, priority, category, source
+        以及 code_fix（original/updated/file/reason/type）。
+        """
         from langchain_core.messages import HumanMessage
 
         system_prompt = (
@@ -331,11 +337,21 @@ class SuggestionAgent(BaseAgent):
             "  - type: security | performance | refactor | general | testing | complexity\n"
             "  - title: 中文标题，20字以内，精准描述问题\n"
             "  - description: 详细说明（中文，80-200字），包含具体建议和可操作的步骤\n"
-            "  - priority: high | medium | low（根据问题严重程度判断）\n"
+            "  - priority: high | medium | low\n"
             "  - category: security | testing | complexity | dependency | architecture | "
             "infrastructure | readability | maintenance\n"
-            "只返回 JSON 数组，不要有任何其他文字。\n"
-            "请确保建议真实反映代码内容，不要泛泛而谈。"
+            "  - code_fix: 必须包含，格式为 {\n"
+            "      file: 目标文件路径，如 src/utils/helper.py（必须从下面提供的文件列表中选择）\n"
+            "      type: replace | insert | delete\n"
+            "      original: 原代码（必须是下面提供的代码中存在的精确字符串，用于定位修改位置）\n"
+            "      updated: 修改后的代码\n"
+            "      reason: 修改原因说明（中文，一句话）\n"
+            "    }\n"
+            "重要规则：\n"
+            "1. code_fix.file 必须从上下文提供的文件中选择，不要自行推断文件路径\n"
+            "2. code_fix.original 必须是文件中存在的精确代码字符串\n"
+            "3. 如果不确定精确代码，type 改用 'insert' 并在 updated 中写新代码，original 写空字符串\n"
+            "只返回 JSON 数组，不要有任何其他文字。"
         )
 
         user_prompt = (
@@ -477,7 +493,7 @@ class SuggestionAgent(BaseAgent):
 
     @staticmethod
     def _normalize_suggestions(raw: list, next_id) -> list[dict]:
-        """标准化 LLM 返回的建议列表。"""
+        """标准化 LLM 返回的建议列表，同时保留 code_fix 字段。"""
         validated: list[dict] = []
         for s in raw:
             if not isinstance(s, dict):
@@ -486,7 +502,26 @@ class SuggestionAgent(BaseAgent):
             if not title:
                 continue
 
-            validated.append({
+            code_fix = s.get("code_fix")
+            if isinstance(code_fix, dict) and (code_fix.get("original") or code_fix.get("updated")):
+                normalized_fix = {
+                    "file": str(code_fix.get("file", "")),
+                    "type": str(code_fix.get("type", "replace")),
+                    "original": str(code_fix.get("original", "")),
+                    "updated": str(code_fix.get("updated", "")),
+                    "reason": str(code_fix.get("reason", "")),
+                }
+            else:
+                # LLM 未提供 code_fix，使用占位符（后续 FixGeneratorAgent 可补充）
+                normalized_fix = {
+                    "file": "",
+                    "type": "replace",
+                    "original": "",
+                    "updated": "",
+                    "reason": "",
+                }
+
+            item = {
                 "id": next_id(),
                 "type": str(s.get("type", "general")).lower()[:20],
                 "title": title[:30],
@@ -494,7 +529,9 @@ class SuggestionAgent(BaseAgent):
                 "priority": SuggestionAgent._normalize_priority(s.get("priority")),
                 "category": str(s.get("category", "general"))[:30],
                 "source": "llm",
-            })
+                "code_fix": normalized_fix,
+            }
+            validated.append(item)
         return validated
 
     @staticmethod

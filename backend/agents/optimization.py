@@ -62,7 +62,7 @@ class OptimizationAgent(SuggestionAgent):
                 suggestions = data.get("suggestions", [])
 
                 # 映射为前端期望的 OptimizationResult 格式
-                # 只保留前端类型中声明的字段
+                # 保留 code_fix（original/updated）供 PR 创建时使用
                 mapped_suggestions = [
                     {
                         "id": s["id"],
@@ -70,6 +70,11 @@ class OptimizationAgent(SuggestionAgent):
                         "title": s.get("title", ""),
                         "description": s.get("description", ""),
                         "priority": s.get("priority", "medium"),
+                        **(
+                            {"code_fix": s["code_fix"]}
+                            if s.get("code_fix")
+                            else {}
+                        ),
                     }
                     for s in suggestions
                 ]

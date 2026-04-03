@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Zap, Rocket } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
+import { PRCreateModal, CodeFix } from "@/components/ui/PRCreateModal";
 import { useAppStore } from "@/store/useAppStore";
 
 interface SuggestionData {
@@ -12,6 +13,13 @@ interface SuggestionData {
     description?: string;
     priority?: string;
     done?: boolean;
+    code_fix?: {
+      file: string;
+      type: string;
+      original: string;
+      updated: string;
+      reason: string;
+    };
   }>;
   high_priority?: number;
   medium_priority?: number;
@@ -25,11 +33,14 @@ const PRIORITY_STYLES: Record<string, { bg: string; text: string }> = {
 };
 
 export const OptimizationAgentCard = () => {
+  const [showPRModal, setShowPRModal] = useState(false);
+  const [currentSuggestion, setCurrentSuggestion] = useState<CodeFix | null>(null);
   const eventsVersion = useAppStore((s) => s.eventsVersion);
   const isAnalyzing = useAppStore((s) => s.isAnalyzing);
   const activeAgent = useAppStore((s) => s.activeAgent);
   const finishedAgents = useAppStore((s) => s.finishedAgents);
   const suggestionEvent = useAppStore((s) => s.agentEvents["optimization"]);
+  const repoUrl = useAppStore((s) => s.repoUrl);
 
   const suggestionDone = finishedAgents.includes("optimization");
   const isScanning = isAnalyzing || activeAgent === "optimization";
@@ -44,6 +55,7 @@ export const OptimizationAgentCard = () => {
     : "IDLE";
 
   return (
+    <>
     <GlassCard className="p-5 relative" glow={isScanning}>
       {isScanning && <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-purple-400/80 to-transparent animate-pulse" />}
       <div className="flex justify-between items-start mb-4">
@@ -107,7 +119,22 @@ export const OptimizationAgentCard = () => {
                   <p className="text-[11px] text-slate-400">{item.description ?? ""}</p>
                 </div>
                 <div className="mt-3 flex justify-end">
-                  <button className="px-3 py-1.5 bg-blue-500/10 border border-blue-500/30 rounded-lg flex items-center gap-2 text-[10px] font-bold text-blue-400 hover:bg-blue-500/20 transition-all">
+                  <button
+                    onClick={() => {
+                      const fix = item.code_fix;
+                      console.log('💪🐻👉 ~ OptimizationAgentCard ~ fix:', fix)
+                      setCurrentSuggestion({
+                        file: fix?.file || "",
+                        type: (fix?.type as "replace" | "insert" | "delete") || "replace",
+                        original: fix?.original || "",
+                        updated: fix?.updated || "",
+                        description:`${item.type}: ${item.description}`,
+                        reason: fix?.reason || "",
+                      });
+                      setShowPRModal(true);
+                    }}
+                    className="px-3 py-1.5 bg-blue-500/10 border border-blue-500/30 rounded-lg flex items-center gap-2 text-[10px] font-bold text-blue-400 hover:bg-blue-500/20 transition-all"
+                  >
                     <Rocket size={12} />
                     <span>一键提交 PR</span>
                   </button>
@@ -135,6 +162,16 @@ export const OptimizationAgentCard = () => {
           </motion.div>
         )}
         </AnimatePresence>
+
     </GlassCard>
+
+      <PRCreateModal
+        isOpen={showPRModal}
+        onClose={() => setShowPRModal(false)}
+        suggestion={currentSuggestion}
+        repoUrl={repoUrl}
+        branch="main"
+      />
+    </>
   );
 };

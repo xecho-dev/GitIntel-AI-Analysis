@@ -5,6 +5,7 @@ import os
 import logging
 from contextlib import asynccontextmanager
 
+from pydantic import BaseModel
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -43,6 +44,9 @@ from services.database import (
     get_user_profile,
     get_user_uuid,
 )
+from services.git_service import get_git_status, get_staged_diff, run_git_commit
+from services.github_pr_service import GitHubPRService
+from agents.fix_generator import FixGeneratorAgent
 from supabase_client import get_supabase_admin
 
 
@@ -246,6 +250,157 @@ async def api_export_pdf(req: ExportPdfRequest, request: Request):
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+# ─── Git Commit API ─────────────────────────────────────────────
+
+class GitCommitRequest(BaseModel):
+    message: str
+
+
+@app.post("/api/git/commit")
+async def api_git_commit(req: GitCommitRequest, request: Request):
+    """
+    执行 git commit（需要认证）。
+
+    返回 staged diff 列表供前端预览。
+    """
+    payload = require_auth(request)
+    if not (payload.get("sub") or payload.get("id")):
+        raise HTTPException(status_code=401, detail="无法识别用户身份")
+
+    # 获取当前 staged diff（预览用）
+    staged_diffs = get_staged_diff(repo_path=".")
+
+    # 执行 commit
+    result = run_git_commit(req.message, repo_path=".")
+
+    if result.success:
+        return {
+            "success": True,
+            "commit_hash": result.commit_hash,
+            "message": result.message,
+            "staged_diffs": [
+                {"filename": d.filename, "diff": d.diff} for d in staged_diffs
+            ],
+        }
+    else:
+        raise HTTPException(status_code=400, detail=result.error or "提交失败")
+
+
+@app.get("/api/git/status")
+async def api_git_status(request: Request):
+    """
+    获取当前 git 状态和 staged diff（需要认证）。
+    """
+    payload = require_auth(request)
+    if not (payload.get("sub") or payload.get("id")):
+        raise HTTPException(status_code=401, detail="无法识别用户身份")
+
+    status = get_git_status(repo_path=".")
+    staged_diffs = get_staged_diff(repo_path=".")
+
+    return {
+        "is_repo": status.is_repo,
+        "current_branch": status.current_branch,
+        "staged_files": status.staged_files,
+        "unstaged_files": status.unstaged_files,
+        "untracked_files": status.untracked_files,
+        "clean": status.clean,
+        "staged_diffs": [
+            {"filename": d.filename, "diff": d.diff} for d in staged_diffs
+        ],
+    }
+
+
+# ─── PR Auto-Create API ────────────────────────────────────────────
+
+class PRGenerateRequest(BaseModel):
+    """生成代码修改方案的请求。"""
+    repo_url: str
+    branch: str = "main"
+    suggestions: list[dict]  # SuggestionAgent 返回的建议列表
+    file_contents: dict | None = None  # 可选：文件内容字典
+
+
+class PRCreateRequest(BaseModel):
+    """创建 PR 的请求。"""
+    repo_url: str
+    branch: str = "main"
+    fixes: list[dict]  # FixGeneratorAgent 返回的修改方案
+    base_branch: str | None = None
+    pr_title: str | None = None
+
+
+@app.post("/api/pr/generate")
+async def api_pr_generate(req: PRGenerateRequest, request: Request):
+    """
+    基于分析建议生成代码修改方案（FixGeneratorAgent）。
+    返回 CodeFix[] 列表供前端预览。
+    """
+    payload = require_auth(request)
+    if not (payload.get("sub") or payload.get("id")):
+        raise HTTPException(status_code=401, detail="无法识别用户身份")
+
+    agent = FixGeneratorAgent()
+    fixes_result = None
+
+    async for event in agent.stream(
+        repo_path=req.repo_url,
+        branch=req.branch,
+        suggestions=req.suggestions,
+        file_contents=req.file_contents,
+    ):
+        if event["type"] == "result":
+            fixes_result = event["data"]
+
+    if not fixes_result:
+        return {"success": False, "fixes": [], "error": "生成失败"}
+
+    return {
+        "success": True,
+        "fixes": fixes_result.get("fixes", []),
+        "total": fixes_result.get("total", 0),
+        "message": fixes_result.get("message", ""),
+    }
+
+
+@app.post("/api/pr/create")
+async def api_pr_create(req: PRCreateRequest, request: Request):
+    """
+    创建 GitHub Pull Request。
+    流程：创建分支 → 提交文件修改 → 创建 PR
+    """
+    payload = require_auth(request)
+    if not (payload.get("sub") or payload.get("id")):
+        raise HTTPException(status_code=401, detail="无法识别用户身份")
+
+    # 检查 GITHUB_TOKEN
+    github_token = os.getenv("GITHUB_TOKEN", "").strip()
+    if not github_token:
+        raise HTTPException(
+            status_code=400,
+            detail="未配置 GITHUB_TOKEN，无法创建 PR。请在环境变量中设置 GitHub Personal Access Token。"
+        )
+
+    service = GitHubPRService(token=github_token)
+    result = await service.create_pr(
+        repo_url=req.repo_url,
+        branch=req.branch,
+        fixes=req.fixes,
+        base_branch=req.base_branch,
+        pr_title=req.pr_title,
+    )
+
+    if not result.success:
+        raise HTTPException(status_code=400, detail=result.error)
+
+    return {
+        "success": True,
+        "pr_url": result.pr_url,
+        "pr_number": result.pr_number,
+        "pr_title": result.pr_title,
+    }
 
 
 if __name__ == "__main__":

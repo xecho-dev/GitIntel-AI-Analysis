@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
@@ -12,6 +12,7 @@ import {
   Settings,
   LogOut,
   Github,
+  GitCommit,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -38,6 +39,7 @@ export const Header = () => {
   if (isLoginPage) return null;
 
   return (
+    <>
     <header className="fixed top-0 w-full z-50 bg-[#10141a]/80 backdrop-blur-xl border-b border-white/5 flex justify-between items-center px-6 h-16">
       <div className="flex items-center gap-8">
         <div className="flex items-center gap-2">
@@ -64,6 +66,7 @@ export const Header = () => {
               </Link>
             );
           })}
+
         </nav>
       </div>
 
@@ -115,5 +118,7 @@ export const Header = () => {
         </div>
       </div>
     </header>
+
+    </>
   );
 };

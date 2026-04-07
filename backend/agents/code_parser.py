@@ -505,6 +505,51 @@ class CodeParserAgent(BaseAgent):
         return final_chunks
 
     @staticmethod
+    def _split_large_chunk(chunk: dict, max_lines: int) -> list[dict]:
+        """
+        递归拆分超大代码块。
+
+        Args:
+            chunk: 包含 start_line, end_line, content 的块
+            max_lines: 每个子块的最大行数
+
+        Returns:
+            拆分后的子块列表
+        """
+        start_line = chunk["start_line"]
+        end_line = chunk["end_line"]
+        content = chunk["content"]
+        total_lines = end_line - start_line + 1
+
+        if total_lines <= max_lines:
+            return [chunk]
+
+        # 按 max_lines 分割
+        sub_chunks: list[dict] = []
+        lines = content.split("\n")
+        chunk_id = 0
+
+        i = 0
+        while i < total_lines:
+            chunk_end_line = min(i + max_lines, total_lines)
+            # 收集这个子块的行
+            sub_lines = lines[i:chunk_end_line]
+            sub_content = "\n".join(sub_lines)
+
+            sub_chunks.append({
+                "chunk_id": chunk_id,
+                "start_line": start_line + i,
+                "end_line": start_line + chunk_end_line - 1,
+                "content": sub_content,
+                "function_name": None,
+                "node_type": "split",
+            })
+            chunk_id += 1
+            i = chunk_end_line
+
+        return sub_chunks
+
+    @staticmethod
     def _extract_node_name(tree, target_start: int, target_end: int) -> str | None:
         """从 AST 中提取指定行范围内的函数/类名称。"""
         source = tree.text if hasattr(tree, "text") else b""

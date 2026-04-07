@@ -1,0 +1,70 @@
+# ============================================================
+# GitIntel — Docker Compose 部署配置
+#
+# 用法：
+#   1. 复制 .env.example 为 .env，填入真实密钥
+#   2. 运行：docker compose up -d --build
+#   3. 访问：http://<服务器IP>:3000
+# ============================================================
+
+services:
+  # ── Frontend — Next.js 15 ────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      # 构建时注入的公开变量（BUILD TIME，必须在这里传）
+      # NEXT_PUBLIC_* 必须在构建时 bake 进客户端 bundle
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://backend:8000}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_NEXTAUTH_URL: ${NEXT_PUBLIC_NEXTAUTH_URL:-http://localhost:3000}
+        NEXT_PUBLIC_NEXTAUTH_SECRET: ${NEXT_PUBLIC_NEXTAUTH_SECRET}
+    container_name: gitintel-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # 运行时环境变量（非 NEXT_PUBLIC_ 变量）
+      NODE_ENV: production
+      # 确保 NextAuth 在容器内能正确识别 URL
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+    networks:
+      - gitintel-net
+
+  # ── Backend — FastAPI Agent Layer ────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: gitintel-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    # 读取 backend/.env 中的变量（包含 API keys）
+    env_file:
+      - path: ./backend/.env
+        # 如果 backend/.env 不存在则忽略，不报错
+        required: false
+    environment:
+      # 运行时额外变量（可覆盖或补充 .env）
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      # Supabase 配置（没有单独 .env 时兜底）
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      # NextAuth / Supabase Auth
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
+      # GitHub 操作权限 Token
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      # OpenAI（Agent 层调用 LLM）
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+    networks:
+      - gitintel-net
+
+networks:
+  gitintel-net:
+    driver: bridge

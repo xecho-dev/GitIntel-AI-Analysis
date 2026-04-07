@@ -1,0 +1,53 @@
+# ── Git ───────────────────────────────────────────────────────
+.git
+.gitignore
+
+# ── Node_modules（容器内重新安装）─────────────────────────────
+**/node_modules
+**/.pnpm-store
+
+# ── Next.js 构建缓存 ──────────────────────────────────────────
+frontend/.next
+frontend/out
+
+# ── Python 缓存 ────────────────────────────────────────────────
+backend/__pycache__
+backend/**/__pycache__
+backend/*.pyc
+backend/.venv
+backend/.pytest_cache
+backend/htmlcov
+backend/dist
+backend/build
+
+# ── 测试文件 ──────────────────────────────────────────────────
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+**/*.spec.py
+**/*.test.py
+frontend/jest.config.*
+frontend/tsconfig.tsbuildinfo
+
+# ── IDE / 编辑器 ──────────────────────────────────────────────
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+
+# ── Turborepo / pnpm workspace 缓存 ───────────────────────────
+.turbo
+node_modules
+.pnpm-debug.log
+
+# ── 环境文件（不要打包进镜像）────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── 文档 / 其他 ───────────────────────────────────────────────
+*.md
+!README.md
+LICENSE

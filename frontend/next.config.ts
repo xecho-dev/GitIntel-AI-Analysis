@@ -3,7 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
-  // 允许未定义的 env 变量在客户端使用（必须有 NEXT_PUBLIC_ 前缀）
+  // Docker 部署：standalone 产出最小自包含构建产物
+  output: "standalone",
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
   },

@@ -1,0 +1,39 @@
+# ============================================================
+# Backend Dockerfile — FastAPI + Python
+# ============================================================
+# 基础镜像：Python 3.12（Alpine 体积小、启动快）
+FROM python:3.12-slim
+
+# 防止 Python 写入字节码时产生 .pyc 文件
+ENV PYTHONDONTWRITEBYTECODE=1
+# uvicorn worker 日志使用 unbuffered 模式
+ENV PYTHONUNBUFFERED=1
+
+# 工作目录
+WORKDIR /app
+
+# ── 安装编译依赖（tree-sitter 系列需要编译工具链）────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    make \
+    git \
+    # tree-sitter 编译需要的系统库
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── 先复制依赖文件，再安装（利用 Docker 缓存层）──────────────
+COPY backend/requirements.txt /app/requirements.txt
+
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
+
+# ── 复制后端源码 ─────────────────────────────────────────────
+COPY backend/ /app/
+
+# ── 暴露端口 ─────────────────────────────────────────────────
+EXPOSE 8000
+
+# ── 启动命令 ─────────────────────────────────────────────────
+# 使用 uvicorn 直接运行，支持多 worker（生产推荐）
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

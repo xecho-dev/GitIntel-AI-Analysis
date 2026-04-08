@@ -19,8 +19,7 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://backend:8000}
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
-        # NextAuth v5：使用 AUTH_* 前缀（服务端运行时变量，不走 NEXT_PUBLIC_）
-        NEXT_PUBLIC_AUTH_URL: ${NEXT_PUBLIC_AUTH_URL:-http://localhost:3000}
+        NEXT_PUBLIC_AUTH_URL: ${AUTH_URL:-http://localhost:3000}
     container_name: gitintel-frontend
     restart: unless-stopped
     ports:
@@ -37,6 +36,8 @@ services:
       AUTH_GITHUB_SECRET: ${AUTH_GITHUB_SECRET}
     networks:
       - gitintel-net
+    env_file:
+      - ./deploy.env
 
   # ── Backend — FastAPI Agent Layer ────────────────────────────
   backend:

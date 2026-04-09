@@ -184,12 +184,13 @@ jobs:
           echo "时间: $(date '+%Y-%m-%d %H:%M:%S')"
           echo "Commit: ${{ needs.build.outputs.commit_short }}"
 
-          DEPLOY_PATH="/opt/gitintel"
-          REGISTRY="${{ env.REGISTRY }}"
-          REGISTRY_USERNAME="${{ github.actor }}"
-          REGISTRY_TOKEN="${{ secrets.GITHUB_TOKEN }}"
-          FRONTEND_IMAGE="${{ env.REGISTRY }}/${{ github.repository }}/frontend:latest"
-          BACKEND_IMAGE="${{ env.REGISTRY }}/${{ github.repository }}/backend:latest"
+          # 导出镜像名称（供 docker-compose.yml 使用）
+          export FRONTEND_IMAGE="${{ env.REGISTRY }}/${{ github.repository }}/frontend:latest"
+          export BACKEND_IMAGE="${{ env.REGISTRY }}/${{ github.repository }}/backend:latest"
+          export FRONTEND_URL="http://47.80.59.132:3000"
+          export REGISTRY="${{ env.REGISTRY }}"
+          export REGISTRY_USERNAME="${{ github.actor }}"
+          export REGISTRY_TOKEN="${{ secrets.GITHUB_TOKEN }}"
 
           # 创建部署目录
           sudo mkdir -p $DEPLOY_PATH

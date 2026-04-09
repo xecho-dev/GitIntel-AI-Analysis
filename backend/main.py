@@ -37,6 +37,9 @@ from schemas.history import (
     HistoryListResponse,
     UpsertUserRequest,
     UserProfile,
+    AdminOverviewResponse,
+    AdminUserListResponse,
+    AdminHistoryListResponse,
 )
 from services.database import (
     save_analysis,
@@ -45,6 +48,11 @@ from services.database import (
     upsert_user,
     get_user_profile,
     get_user_uuid,
+    db_get_overview_stats,
+    db_get_all_users,
+    db_update_user,
+    db_get_all_history,
+    db_delete_history_by_admin,
 )
 from services.git_service import get_git_status, get_staged_diff, run_git_commit
 from services.github_pr_service import GitHubPRService
@@ -463,6 +471,86 @@ async def api_pr_create(req: PRCreateRequest, request: Request):
         "is_fork": result.is_fork,
         "fork_url": result.fork_url,
     }
+
+
+# ─── Admin 管理端 API ──────────────────────────────────────────────────────────
+
+@app.get("/api/admin/overview", response_model=AdminOverviewResponse)
+async def api_admin_overview():
+    """系统概览统计数据（无需登录，供 admin 后台使用）"""
+    try:
+        sb = get_supabase_admin()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    from services.database import db_get_overview_stats
+    try:
+        stats = db_get_overview_stats(sb)
+        return stats
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/users", response_model=AdminUserListResponse)
+async def api_admin_list_users(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    search: str | None = Query(None),
+):
+    """管理端：获取全部用户列表（分页）"""
+    try:
+        sb = get_supabase_admin()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    from services.database import db_get_all_users
+    return db_get_all_users(sb, page, page_size, search)
+
+
+@app.put("/api/admin/users/{user_id}", response_model=dict)
+async def api_admin_update_user(user_id: str, body: dict, request: Request):
+    """管理端：更新指定用户（如禁用/启用）"""
+    try:
+        sb = get_supabase_admin()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    from services.database import db_update_user
+    ok = db_update_user(sb, user_id, body)
+    if not ok:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    return {"success": True}
+
+
+@app.get("/api/admin/analysis-history", response_model=AdminHistoryListResponse)
+async def api_admin_list_history(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    search: str | None = Query(None),
+):
+    """管理端：获取全站所有用户的分析历史（分页）"""
+    try:
+        sb = get_supabase_admin()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    from services.database import db_get_all_history
+    return db_get_all_history(sb, page, page_size, search)
+
+
+@app.delete("/api/admin/analysis-history/{record_id}", response_model=dict)
+async def api_admin_delete_history(record_id: str, request: Request):
+    """管理端：删除指定分析记录"""
+    try:
+        sb = get_supabase_admin()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    from services.database import db_delete_history_by_admin
+    ok = db_delete_history_by_admin(sb, record_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="记录不存在")
+    return {"deleted": True}
 
 
 if __name__ == "__main__":

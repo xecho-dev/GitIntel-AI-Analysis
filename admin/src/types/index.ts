@@ -1,0 +1,74 @@
+// 管理员端专用类型（Users / Analysis History 相关）
+// 与 @gitintel/types 的主要区别：
+// - AdminUserItem 包含 users 表全部字段（用于管理后台展示）
+// - AdminAnalysisItem 包含 user_id（关联到具体用户）
+
+// ─── 用户管理 ────────────────────────────────────────────────────────────────
+
+export interface AdminUserItem {
+  id: string;
+  auth_user_id: string;
+  github_id: string | null;
+  login: string;
+  email: string | null;
+  avatar_url: string | null;
+  name: string | null;
+  bio: string | null;
+  company: string | null;
+  location: string | null;
+  blog: string | null;
+  public_repos: number;
+  followers: number;
+  following: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminUserListResponse {
+  items: AdminUserItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+// ─── 分析记录 ────────────────────────────────────────────────────────────────
+
+export interface AdminAnalysisItem {
+  id: string;
+  user_id: string;
+  repo_url: string;
+  repo_name: string;
+  branch: string;
+  health_score: number | null;
+  quality_score: string | null;
+  risk_level: string | null;
+  risk_level_color: string | null;
+  risk_level_bg: string | null;
+  border_color: string | null;
+  result_data: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface AdminHistoryListResponse {
+  items: AdminAnalysisItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  stats: {
+    total_scans: number;
+    avg_health_score: number;
+    high_risk_count: number;
+    medium_risk_count: number;
+  };
+}
+
+// ─── 概览统计 ────────────────────────────────────────────────────────────────
+
+export interface AdminOverviewStats {
+  total_users: number;
+  total_analysis: number;
+  today_analysis: number;
+  avg_health_score: number;
+  high_risk_count: number;
+  medium_risk_count: number;
+}

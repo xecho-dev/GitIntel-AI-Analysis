@@ -15,7 +15,7 @@ create table if not exists public.users (
     -- NextAuth user id (sub claim from JWT)
     auth_user_id    text unique not null,
     github_id       text unique,
-    login           text not null,
+    login           text unique not null,
     email           text,
     avatar_url      text,
     name            text,

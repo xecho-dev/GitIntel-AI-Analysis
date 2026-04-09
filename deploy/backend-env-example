@@ -1,0 +1,36 @@
+# ============================================================
+# GitIntel 后端环境变量配置
+# ============================================================
+# 复制此文件为 .env，填入实际值
+# 路径：/opt/gitintel/.env
+
+# ========== API 密钥 ==========
+# OpenAI API Key（Agent 层调用 LLM）
+OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# OpenAI API 基础地址（可选，默认官方接口）
+OPENAI_BASE_URL=https://api.openai.com/v1
+
+# ========== Supabase ==========
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# Supabase JWT Secret（用于验证用户 Token）
+# 在 Supabase Dashboard > Project Settings > API 中获取
+SUPABASE_JWT_SECRET=your-jwt-secret-from-supabase-dashboard
+
+# ========== 服务器配置 ==========
+# 后端监听端口（保持默认 8000）
+PORT=8000
+
+# 前端地址（用于 CORS 白名单）
+# 如果前端使用域名，填入完整 URL
+# 如果只有 IP，填入 http://IP:端口
+FRONTEND_URL=https://your-domain.com
+
+# ========== 可选功能 ==========
+# GitHub Token（访问私有仓库，用于代码分析）
+# 在 GitHub Settings > Developer settings > Personal access tokens 生成
+# 需要 repo 范围的读取权限
+GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx

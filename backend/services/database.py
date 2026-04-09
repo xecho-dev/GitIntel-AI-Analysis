@@ -8,6 +8,11 @@ from schemas.history import (
     HistoryListResponse,
     SaveAnalysisResponse,
     UserProfile,
+    AdminOverviewResponse,
+    AdminUserItem,
+    AdminUserListResponse,
+    AdminHistoryItem,
+    AdminHistoryListResponse,
 )
 
 
@@ -255,12 +260,55 @@ def delete_analysis(sb: Client, auth_user_id: str, history_id: str) -> bool:
 
 
 def upsert_user(sb: Client, auth_user_id: str, payload: dict) -> UserProfile:
-    """Upsert GitHub 用户信息。"""
+    """
+    Upsert GitHub 用户信息。
+
+    去重策略（防止同一 GitHub 账户因 auth_user_id 变化而重复创建）：
+    1. 先按 auth_user_id 查找（稳定路径）
+    2. 如果找不到，再按 login 查找：
+       - 找到 → 更新旧记录的 auth_user_id（保留原 users.id，历史记录不受影响）
+       - 未找到 → 正常创建新记录
+    """
     payload_clean = {k: v for k, v in payload.items() if v is not None and v != ""}
     payload_clean["auth_user_id"] = auth_user_id
     payload_clean["updated_at"] = datetime.utcnow().isoformat()
 
-    sb.table("users").upsert(payload_clean, on_conflict="auth_user_id").execute()
+    # 尝试 1：按 auth_user_id 查找（正常路径）
+    existing = (
+        sb.table("users")
+        .select("*")
+        .eq("auth_user_id", auth_user_id)
+        .maybe_single()
+        .execute()
+    )
+
+    if existing is not None and existing.data:
+        # 路径 A：auth_user_id 已存在，直接更新
+        sb.table("users").upsert(payload_clean, on_conflict="auth_user_id").execute()
+    else:
+        # 路径 B：auth_user_id 变化，检查是否有相同 login 的旧记录
+        login_val = payload_clean.get("login")
+        if login_val:
+            same_login = (
+                sb.table("users")
+                .select("id, auth_user_id")
+                .eq("login", login_val)
+                .maybe_single()
+                .execute()
+            )
+            if same_login is not None and same_login.data:
+                # 同一 GitHub 账户（login 相同），复用旧记录的 id
+                # 先把旧记录的 auth_user_id 更新为新的（突破 auth_user_id UNIQUE 约束）
+                old_id = same_login.data["id"]
+                sb.table("users").update({"auth_user_id": auth_user_id}).eq("id", old_id).execute()
+                # 再正常 upsert（此时 auth_user_id 唯一，不会再产生重复）
+                sb.table("users").upsert(payload_clean, on_conflict="auth_user_id").execute()
+            else:
+                # 路径 C：真正的全新用户，直接 upsert
+                sb.table("users").upsert(payload_clean, on_conflict="auth_user_id").execute()
+        else:
+            # 无 login 字段，fallback 直接 upsert
+            sb.table("users").upsert(payload_clean, on_conflict="auth_user_id").execute()
 
     fetched = (
         sb.table("users")
@@ -341,3 +389,171 @@ def get_user_uuid(sb: Client, auth_user_id: str) -> Optional[str]:
     if not row or not isinstance(row, dict):
         return None
     return row.get("id")
+
+
+# ─── 管理端（Admin）数据库操作 ─────────────────────────────────────────────────
+
+def db_get_overview_stats(sb: Client) -> AdminOverviewResponse:
+    """获取全站概览统计数据。"""
+    # 总用户数
+    user_count_data = sb.table("users").select("id", count="exact").execute()
+    total_users = user_count_data.count or 0
+
+    # 总分析次数 + 统计信息
+    all_history = sb.table("analysis_history").select(
+        "health_score, risk_level, created_at"
+    ).execute()
+    all_rows = all_history.data or []
+    total_analysis = len(all_rows)
+
+    # 今日分析次数
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).date().isoformat()
+    today_data = (
+        sb.table("analysis_history")
+        .select("id", count="exact")
+        .gte("created_at", f"{today}T00:00:00Z")
+        .execute()
+    )
+    today_analysis = today_data.count or 0
+
+    # 平均健康分
+    scores = [r["health_score"] for r in all_rows if r.get("health_score") is not None]
+    avg_hs = round(sum(scores) / len(scores), 1) if scores else 0.0
+
+    high_risk_count = sum(1 for r in all_rows if r.get("risk_level") == "高危")
+    medium_risk_count = sum(1 for r in all_rows if r.get("risk_level") == "中等")
+
+    return AdminOverviewResponse(
+        total_users=total_users,
+        total_analysis=total_analysis,
+        today_analysis=today_analysis,
+        avg_health_score=avg_hs,
+        high_risk_count=high_risk_count,
+        medium_risk_count=medium_risk_count,
+    )
+
+
+def db_get_all_users(
+    sb: Client,
+    page: int = 1,
+    page_size: int = 10,
+    search: str | None = None,
+) -> AdminUserListResponse:
+    """管理端：获取全部用户列表（分页，支持按 login/email 搜索）。"""
+    offset = (page - 1) * page_size
+
+    query = sb.table("users").select("*").order("created_at", desc=True).range(offset, offset + page_size - 1)
+    if search:
+        query = query.or_(f"login.ilike.%{search}%,email.ilike.%{search}%")
+
+    data = query.execute()
+
+    count_query = sb.table("users").select("id", count="exact")
+    if search:
+        count_query = count_query.or_(f"login.ilike.%{search}%,email.ilike.%{search}%")
+    count_data = count_query.execute()
+    total = count_data.count or 0
+
+    items = [
+        AdminUserItem(
+            id=r["id"],
+            auth_user_id=r["auth_user_id"],
+            github_id=r.get("github_id"),
+            login=r["login"],
+            email=r.get("email"),
+            avatar_url=r.get("avatar_url"),
+            name=r.get("name"),
+            bio=r.get("bio"),
+            company=r.get("company"),
+            location=r.get("location"),
+            blog=r.get("blog"),
+            public_repos=r.get("public_repos", 0),
+            followers=r.get("followers", 0),
+            following=r.get("following", 0),
+            created_at=r["created_at"],
+            updated_at=r.get("updated_at", r["created_at"]),
+        )
+        for r in data.data
+    ]
+    return AdminUserListResponse(items=items, total=total, page=page, pageSize=page_size)
+
+
+def db_update_user(sb: Client, user_id: str, data: dict) -> bool:
+    """管理端：更新指定用户信息（支持禁用/启用等）。"""
+    update_fields = {k: v for k, v in data.items() if k not in ("id", "auth_user_id", "created_at")}
+    update_fields["updated_at"] = datetime.utcnow().isoformat()
+    result = sb.table("users").update(update_fields).eq("id", user_id).execute()
+    return (result.data is not None and len(result.data) > 0) or (hasattr(result, "count") and result.count > 0)
+
+
+def db_get_all_history(
+    sb: Client,
+    page: int = 1,
+    page_size: int = 10,
+    search: str | None = None,
+) -> AdminHistoryListResponse:
+    """管理端：获取全站分析历史（分页）。"""
+    offset = (page - 1) * page_size
+
+    query = (
+        sb.table("analysis_history")
+        .select("*")
+        .order("created_at", desc=True)
+        .range(offset, offset + page_size - 1)
+    )
+    if search:
+        query = query.ilike("repo_name", f"%{search}%")
+
+    data = query.execute()
+
+    count_query = sb.table("analysis_history").select("id", count="exact")
+    if search:
+        count_query = count_query.ilike("repo_name", f"%{search}%")
+    count_data = count_query.execute()
+    total = count_data.count or 0
+
+    # 统计信息（不计筛选）
+    stats_all = sb.table("analysis_history").select("health_score, risk_level").execute()
+    all_rows = stats_all.data or []
+    scores = [r["health_score"] for r in all_rows if r.get("health_score") is not None]
+    avg_hs = round(sum(scores) / len(scores), 1) if scores else 0.0
+    high_count = sum(1 for r in all_rows if r.get("risk_level") == "高危")
+    med_count = sum(1 for r in all_rows if r.get("risk_level") == "中等")
+
+    items = [
+        AdminHistoryItem(
+            id=r["id"],
+            user_id=r["user_id"],
+            repo_url=r["repo_url"],
+            repo_name=r["repo_name"],
+            branch=r.get("branch", "main"),
+            health_score=r.get("health_score"),
+            quality_score=r.get("quality_score"),
+            risk_level=r.get("risk_level"),
+            risk_level_color=r.get("risk_level_color"),
+            risk_level_bg=r.get("risk_level_bg"),
+            border_color=r.get("border_color"),
+            result_data=r.get("result_data"),
+            created_at=r["created_at"],
+        )
+        for r in data.data
+    ]
+    return AdminHistoryListResponse(
+        items=items,
+        total=total,
+        page=page,
+        pageSize=page_size,
+        stats=HistoryStats(
+            total_scans=len(all_rows),
+            avg_health_score=avg_hs,
+            high_risk_count=high_count,
+            medium_risk_count=med_count,
+        ),
+    )
+
+
+def db_delete_history_by_admin(sb: Client, record_id: str) -> bool:
+    """管理端：删除指定分析记录（不校验用户权限）。"""
+    result = sb.table("analysis_history").delete().eq("id", record_id).execute()
+    return (result.data is not None and len(result.data) > 0) or (hasattr(result, "count") and result.count > 0)

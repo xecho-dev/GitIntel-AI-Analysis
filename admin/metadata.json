@@ -1,0 +1,5 @@
+{
+  "name": "GitIntel Admin Console",
+  "description": "A high-performance admin dashboard for monitoring AI Agents, analysis records, and system logs.",
+  "requestFramePermissions": []
+}

@@ -80,3 +80,64 @@ class UpsertUserRequest(BaseModel):
     public_repos: int = 0
     followers: int = 0
     following: int = 0
+
+
+# ─── 管理端（Admin）请求/响应模型 ──────────────────────────────────────────────
+
+class AdminOverviewResponse(BaseModel):
+    total_users: int
+    total_analysis: int
+    today_analysis: int
+    avg_health_score: float
+    high_risk_count: int
+    medium_risk_count: int
+
+
+class AdminUserItem(BaseModel):
+    id: str
+    auth_user_id: str
+    github_id: Optional[str]
+    login: str
+    email: Optional[str]
+    avatar_url: Optional[str]
+    name: Optional[str]
+    bio: Optional[str]
+    company: Optional[str]
+    location: Optional[str]
+    blog: Optional[str]
+    public_repos: int
+    followers: int
+    following: int
+    created_at: str
+    updated_at: str
+
+
+class AdminUserListResponse(BaseModel):
+    items: list[AdminUserItem]
+    total: int
+    page: int
+    pageSize: int
+
+
+class AdminHistoryItem(BaseModel):
+    id: str
+    user_id: str
+    repo_url: str
+    repo_name: str
+    branch: str
+    health_score: Optional[float]
+    quality_score: Optional[str]
+    risk_level: Optional[str]
+    risk_level_color: Optional[str]
+    risk_level_bg: Optional[str]
+    border_color: Optional[str]
+    result_data: Optional[dict]
+    created_at: str
+
+
+class AdminHistoryListResponse(BaseModel):
+    items: list[AdminHistoryItem]
+    total: int
+    page: int
+    pageSize: int
+    stats: HistoryStats

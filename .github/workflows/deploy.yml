@@ -188,6 +188,7 @@ jobs:
           export FRONTEND_IMAGE="${{ env.REGISTRY }}/${{ github.repository }}/frontend:latest"
           export BACKEND_IMAGE="${{ env.REGISTRY }}/${{ github.repository }}/backend:latest"
           export FRONTEND_URL="http://47.80.59.132:3000"
+          export DEPLOY_PATH="/opt/gitintel"
           export REGISTRY="${{ env.REGISTRY }}"
           export REGISTRY_USERNAME="${{ github.actor }}"
           export REGISTRY_TOKEN="${{ secrets.GITHUB_TOKEN }}"

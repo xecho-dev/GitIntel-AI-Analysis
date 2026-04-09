@@ -177,34 +177,39 @@ jobs:
       # --- 执行远程部署脚本 ---
       - name: Deploy to server
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << DEPLOY_SCRIPT
+          REPO="${{ github.repository }}"
+          REPO_LOWER="${REPO,,}"
+          FRONTEND_IMAGE="${{ env.REGISTRY }}/${REPO_LOWER}/frontend:latest"
+          BACKEND_IMAGE="${{ env.REGISTRY }}/${REPO_LOWER}/backend:latest"
+          REGISTRY="${{ env.REGISTRY }}"
+          REGISTRY_USERNAME="${{ github.actor }}"
+          REGISTRY_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+          FRONTEND_URL="${{ secrets.FRONTEND_URL }}"
+          DEPLOY_PATH="/opt/gitintel"
+          SERVER_USER="${{ secrets.SERVER_USER }}"
+          SERVER_HOST="${{ secrets.SERVER_HOST }}"
+          COMMIT_SHORT="${{ needs.build.outputs.commit_short }}"
+
+          ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST bash -s << 'EOF'
           set -e
+          REGISTRY_TOKEN='"$REGISTRY_TOKEN"'
+          REGISTRY_USERNAME='"$REGISTRY_USERNAME"'
+          REGISTRY='"$REGISTRY"'
+          FRONTEND_URL='"$FRONTEND_URL"'
+          DEPLOY_PATH='"$DEPLOY_PATH"'
+          FRONTEND_IMAGE='"$FRONTEND_IMAGE"'
+          BACKEND_IMAGE='"$BACKEND_IMAGE"'
+          COMMIT_SHORT='"$COMMIT_SHORT"'
 
           echo "========== 开始部署 GitIntel =========="
           echo "时间: $(date '+%Y-%m-%d %H:%M:%S')"
-          echo "Commit: ${{ needs.build.outputs.commit_short }}"
+          echo "Commit: $COMMIT_SHORT"
 
-          # 导出镜像名称（供 docker-compose.yml 使用）
-          REPO_LOWER="${{ github.repository,, }}"
-          export FRONTEND_IMAGE="${{ env.REGISTRY }}/$REPO_LOWER/frontend:latest"
-          export BACKEND_IMAGE="${{ env.REGISTRY }}/$REPO_LOWER/backend:latest"
-          export FRONTEND_URL="${{ secrets.FRONTEND_URL }}"
-          export DEPLOY_PATH="/opt/gitintel"
-          export REGISTRY="${{ env.REGISTRY }}"
-          export REGISTRY_USERNAME="${{ github.actor }}"
-          export REGISTRY_TOKEN="${{ secrets.GITHUB_TOKEN }}"
-
-          # 创建部署目录
           sudo mkdir -p $DEPLOY_PATH
-          sudo chown -R $USER:$USER $DEPLOY_PATH
-
-          # 切换到部署目录
+          sudo chown -R $(whoami):$(whoami) $DEPLOY_PATH
           cd $DEPLOY_PATH
-
-          # 移动环境变量文件
           mv /tmp/gitintel.env .env
 
-          # 复制 docker-compose.yml（如果不存在则创建）
           if [ ! -f docker-compose.yml ]; then
             cat > docker-compose.yml << 'DOCKERCOMPOSE'
           services:
@@ -253,27 +258,17 @@ jobs:
           DOCKERCOMPOSE
           fi
 
-          # 登录镜像仓库
           echo "$REGISTRY_TOKEN" | docker login $REGISTRY -u $REGISTRY_USERNAME --password-stdin
-
-          # 拉取最新镜像
           echo "正在拉取镜像..."
           docker-compose pull
-
-          # 停止旧容器并启动新容器
           echo "正在重启服务..."
           docker-compose up -d --remove-orphans
-
-          # 等待健康检查
-          echo "等待服务启动..."
           sleep 10
 
-          # 检查容器状态
           echo ""
           echo "========== 容器状态 =========="
           docker-compose ps
 
-          # 检查健康状态
           FRONTEND_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' gitintel-frontend 2>/dev/null || echo "unknown")
           BACKEND_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' gitintel-backend 2>/dev/null || echo "unknown")
 
@@ -291,7 +286,7 @@ jobs:
 
           echo ""
           echo "========== 部署完成 =========="
-          DEPLOY_SCRIPT
+          EOF
 
   # ==================== 健康检查 ====================
   health-check:

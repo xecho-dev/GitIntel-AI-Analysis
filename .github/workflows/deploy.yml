@@ -247,7 +247,7 @@ jobs:
             networks:
               gitintel-net:
                 driver: bridge
-            DOCKERCOMPOSE
+DOCKERCOMPOSE
           fi
 
           # 登录镜像仓库

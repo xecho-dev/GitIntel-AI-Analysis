@@ -1,5 +1,7 @@
-import { describe, it, expect, beforeEach } from "@jest/globals";
+/// <reference types="@testing-library/jest-dom" />
+import { describe, it, beforeEach } from "@jest/globals";
 import { render, screen } from "@testing-library/react";
+import "@testing-library/jest-dom";
 import { QualityAgentCard } from "@/components/agents/QualityAgentCard";
 import { useAppStore } from "@/store/useAppStore";
 

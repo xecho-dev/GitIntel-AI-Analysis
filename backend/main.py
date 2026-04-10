@@ -41,7 +41,7 @@ from schemas.history import (
     AdminUserListResponse,
     AdminHistoryListResponse,
 )
-from services.database import (
+    from services.database import (
     save_analysis,
     get_history,
     delete_analysis,
@@ -50,9 +50,6 @@ from services.database import (
     get_user_uuid,
     db_get_overview_stats,
     db_get_all_users,
-    db_update_user,
-    db_get_all_history,
-    db_delete_history_by_admin,
 )
 from services.git_service import get_git_status, get_staged_diff, run_git_commit
 from services.github_pr_service import GitHubPRService

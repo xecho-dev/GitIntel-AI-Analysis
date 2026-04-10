@@ -3,8 +3,7 @@ import os
 import json
 import struct
 from typing import Optional
-
-from cryptography.hazmat.primitives.ciphers.aead import AESCCM, AESGCM
+from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 from fastapi import HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError

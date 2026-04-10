@@ -1,8 +1,5 @@
 """Tests for SharedState — LangGraph state schema."""
 
-import pytest
-from typing_extensions import TypedDict
-
 from graph.state import SharedState
 
 

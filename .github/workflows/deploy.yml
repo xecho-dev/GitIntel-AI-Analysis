@@ -264,8 +264,10 @@ jobs:
           echo "========== 容器状态 =========="
           docker-compose ps
 
-          FRONTEND_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' gitintel-frontend 2>/dev/null || echo "unknown")
-          BACKEND_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' gitintel-backend 2>/dev/null || echo "unknown")
+          FRONTEND_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' gitintel-frontend 2>/dev/null)
+          BACKEND_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' gitintel-backend 2>/dev/null)
+          FRONTEND_HEALTH=${FRONTEND_HEALTH:-unknown}
+          BACKEND_HEALTH=${BACKEND_HEALTH:-unknown}
 
           echo ""
           echo "Frontend 健康状态: $FRONTEND_HEALTH"

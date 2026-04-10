@@ -196,7 +196,7 @@ jobs:
           echo "Commit: $COMMIT_SHORT"
 
           sudo mkdir -p $DEPLOY_PATH
-          sudo chown -R $(whoami):$(whoami) $DEPLOY_PATH
+          sudo chown -R $SERVER_USER:$SERVER_USER $DEPLOY_PATH
           cd $DEPLOY_PATH
           mv /tmp/gitintel.env .env
 

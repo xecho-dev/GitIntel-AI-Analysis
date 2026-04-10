@@ -253,8 +253,11 @@ jobs:
           echo "$REGISTRY_TOKEN" | docker login $REGISTRY -u $REGISTRY_USERNAME --password-stdin
           echo "正在拉取镜像..."
           docker-compose pull
-          echo "正在重启服务..."
-          docker-compose up -d --remove-orphans
+          echo "正在清理旧容器..."
+          docker stop gitintel-frontend gitintel-backend 2>/dev/null || true
+          docker rm gitintel-frontend gitintel-backend 2>/dev/null || true
+          echo "正在启动服务..."
+          docker-compose up -d
           sleep 10
 
           echo ""

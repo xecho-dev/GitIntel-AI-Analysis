@@ -17,7 +17,7 @@ export default function HomePage() {
     <div className="space-y-10">
       <section className="text-center">
         <h1 className="text-4xl font-black mb-2 tracking-tight">
-          智能分析工作台
+          智能分析工作台111
         </h1>
         <p className="text-slate-400 font-light">
           输入仓库地址，启动深度架构与风险评估

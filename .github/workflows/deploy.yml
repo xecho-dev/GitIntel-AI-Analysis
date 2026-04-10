@@ -177,44 +177,33 @@ jobs:
       # --- 执行远程部署脚本 ---
       - name: Deploy to server
         run: |
-          REPO="${{ github.repository }}"
-          REPO_LOWER="${REPO,,}"
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           FRONTEND_IMAGE="${{ env.REGISTRY }}/${REPO_LOWER}/frontend:latest"
           BACKEND_IMAGE="${{ env.REGISTRY }}/${REPO_LOWER}/backend:latest"
+          SERVER_USER="${{ secrets.SERVER_USER }}"
+          SERVER_HOST="${{ secrets.SERVER_HOST }}"
           REGISTRY="${{ env.REGISTRY }}"
           REGISTRY_USERNAME="${{ github.actor }}"
           REGISTRY_TOKEN="${{ secrets.GITHUB_TOKEN }}"
           FRONTEND_URL="${{ secrets.FRONTEND_URL }}"
           DEPLOY_PATH="/opt/gitintel"
-          SERVER_USER="${{ secrets.SERVER_USER }}"
-          SERVER_HOST="${{ secrets.SERVER_HOST }}"
           COMMIT_SHORT="${{ needs.build.outputs.commit_short }}"
 
-          ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST bash -s << ENDSSH
+          ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST bash -s << 'ENDSSH'
           set -e
-          REGISTRY_TOKEN=$REGISTRY_TOKEN
-          REGISTRY_USERNAME=$REGISTRY_USERNAME
-          REGISTRY=$REGISTRY
-          FRONTEND_URL=$FRONTEND_URL
-          DEPLOY_PATH=$DEPLOY_PATH
-          FRONTEND_IMAGE=$FRONTEND_IMAGE
-          BACKEND_IMAGE=$BACKEND_IMAGE
-          COMMIT_SHORT=$COMMIT_SHORT
-
           echo "========== 开始部署 GitIntel =========="
           echo "时间: $(date '+%Y-%m-%d %H:%M:%S')"
-          echo "Commit: \$COMMIT_SHORT"
+          echo "Commit: $COMMIT_SHORT"
 
-          sudo mkdir -p \$DEPLOY_PATH
-          sudo chown -R \$(whoami):\$(whoami) \$DEPLOY_PATH
-          cd \$DEPLOY_PATH
+          sudo mkdir -p $DEPLOY_PATH
+          sudo chown -R $(whoami):$(whoami) $DEPLOY_PATH
+          cd $DEPLOY_PATH
           mv /tmp/gitintel.env .env
 
-          rm -f docker-compose.yml
           cat > docker-compose.yml << 'DOCKERCOMPOSE'
           services:
             frontend:
-              image: \${FRONTEND_IMAGE}
+              image: FRONTEND_IMAGE_PLACEHOLDER
               container_name: gitintel-frontend
               restart: unless-stopped
               ports:
@@ -234,7 +223,7 @@ jobs:
                 start_period: 40s
 
             backend:
-              image: \${BACKEND_IMAGE}
+              image: BACKEND_IMAGE_PLACEHOLDER
               container_name: gitintel-backend
               restart: unless-stopped
               ports:
@@ -242,7 +231,7 @@ jobs:
               env_file:
                 - .env
               environment:
-                FRONTEND_URL: \${FRONTEND_URL}
+                FRONTEND_URL: FRONTEND_URL_PLACEHOLDER
               networks:
                 - gitintel-net
               healthcheck:
@@ -257,7 +246,11 @@ jobs:
               driver: bridge
           DOCKERCOMPOSE
 
-          echo "\$REGISTRY_TOKEN" | docker login \$REGISTRY -u \$REGISTRY_USERNAME --password-stdin
+          sed -i "s|FRONTEND_IMAGE_PLACEHOLDER|${FRONTEND_IMAGE}|g" docker-compose.yml
+          sed -i "s|BACKEND_IMAGE_PLACEHOLDER|${BACKEND_IMAGE}|g" docker-compose.yml
+          sed -i "s|FRONTEND_URL_PLACEHOLDER|${FRONTEND_URL}|g" docker-compose.yml
+
+          echo "$REGISTRY_TOKEN" | docker login $REGISTRY -u $REGISTRY_USERNAME --password-stdin
           echo "正在拉取镜像..."
           docker-compose pull
           echo "正在重启服务..."
@@ -268,14 +261,14 @@ jobs:
           echo "========== 容器状态 =========="
           docker-compose ps
 
-          FRONTEND_HEALTH=\$(docker inspect --format='{{.State.Health.Status}}' gitintel-frontend 2>/dev/null || echo "unknown")
-          BACKEND_HEALTH=\$(docker inspect --format='{{.State.Health.Status}}' gitintel-backend 2>/dev/null || echo "unknown")
+          FRONTEND_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' gitintel-frontend 2>/dev/null || echo "unknown")
+          BACKEND_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' gitintel-backend 2>/dev/null || echo "unknown")
 
           echo ""
-          echo "Frontend 健康状态: \$FRONTEND_HEALTH"
-          echo "Backend 健康状态: \$BACKEND_HEALTH"
+          echo "Frontend 健康状态: $FRONTEND_HEALTH"
+          echo "Backend 健康状态: $BACKEND_HEALTH"
 
-          if [ "\$FRONTEND_HEALTH" = "healthy" ] && [ "\$BACKEND_HEALTH" = "healthy" ]; then
+          if [ "$FRONTEND_HEALTH" = "healthy" ] && [ "$BACKEND_HEALTH" = "healthy" ]; then
             echo ""
             echo "✅ 部署成功！"
           else

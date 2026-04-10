@@ -169,7 +169,6 @@ AGENT_API_URL=http://localhost:8000
 
 ```env
 # Supabase 服务端密钥（管理后台操作）
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 SUPABASE_URL=https://your-project.supabase.co
 
 # JWT 鉴权（与 NextAuth JWT Secret 保持一致）
@@ -289,13 +288,13 @@ pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-需要设置的环境变量：`SUPABASE_URL`、`SUPABASE_SERVICE_ROLE_KEY`、`JWT_SECRET`。
+需要设置的环境变量：`SUPABASE_URL`、`JWT_SECRET`。
 
 ### Supabase
 
 1. 在 [Supabase](https://supabase.com) 创建项目
 2. 在 SQL Editor 执行 `supabase/migrations/001_initial_schema.sql`
-3. 获取 `SUPABASE_URL`、`SUPABASE_SERVICE_ROLE_KEY` 填入后端 `.env`
+3. 获取 `SUPABASE_URL`、 填入后端 `.env`
 
 ---
 

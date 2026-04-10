@@ -147,7 +147,6 @@ cat github-actions-key
 | `OPENAI_API_KEY` | OpenAI API Key | `sk-...` |
 | `SUPABASE_URL` | Supabase 项目 URL | `https://xxx.supabase.co` |
 | `SUPABASE_ANON_KEY` | Supabase 匿名密钥 | `eyJhbGci...` |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase Service Role 密钥 | `eyJhbGci...` |
 | `SUPABASE_JWT_SECRET` | Supabase JWT Secret | `your-jwt-secret` |
 | `GITHUB_TOKEN` | GitHub Personal Access Token（用于访问私有仓库） | `ghp_...` |
 

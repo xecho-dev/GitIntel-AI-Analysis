@@ -246,9 +246,9 @@ jobs:
               driver: bridge
           DOCKERCOMPOSE
 
-          sed -i "s|FRONTEND_IMAGE_PLACEHOLDER|${FRONTEND_IMAGE}|g" docker-compose.yml
-          sed -i "s|BACKEND_IMAGE_PLACEHOLDER|${BACKEND_IMAGE}|g" docker-compose.yml
-          sed -i "s|FRONTEND_URL_PLACEHOLDER|${FRONTEND_URL}|g" docker-compose.yml
+          sed -i "s|FRONTEND_IMAGE_PLACEHOLDER|$FRONTEND_IMAGE|g" docker-compose.yml
+          sed -i "s|BACKEND_IMAGE_PLACEHOLDER|$BACKEND_IMAGE|g" docker-compose.yml
+          sed -i "s|FRONTEND_URL_PLACEHOLDER|$FRONTEND_URL|g" docker-compose.yml
 
           echo "$REGISTRY_TOKEN" | docker login $REGISTRY -u $REGISTRY_USERNAME --password-stdin
           echo "正在拉取镜像..."

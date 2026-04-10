@@ -189,7 +189,7 @@ jobs:
           DEPLOY_PATH="/opt/gitintel"
           COMMIT_SHORT="${{ needs.build.outputs.commit_short }}"
 
-          ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST bash -s << 'ENDSSH'
+          ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST bash -s << ENDSSH
           set -e
           echo "========== 开始部署 GitIntel =========="
           echo "时间: $(date '+%Y-%m-%d %H:%M:%S')"
@@ -200,7 +200,7 @@ jobs:
           cd $DEPLOY_PATH
           mv /tmp/gitintel.env .env
 
-          cat > docker-compose.yml << 'DOCKERCOMPOSE'
+          cat > docker-compose.yml << DOCKERCOMPOSE
           services:
             frontend:
               image: FRONTEND_IMAGE_PLACEHOLDER

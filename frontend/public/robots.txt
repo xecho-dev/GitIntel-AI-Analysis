@@ -1,0 +1,27 @@
+# https://www.robotstxt.org/robotstxt.html
+User-agent: *
+Allow: /
+
+# Disallow API routes
+Disallow: /api/
+
+# Disallow authenticated pages
+Disallow: /account/
+Disallow: /history/
+
+# Allow search engines to crawl CSS and JS
+Allow: /_next/static/css/
+Allow: /_next/static/js/
+
+# Sitemap
+Sitemap: https://gitintel.ai/sitemap.xml
+
+# Crawl-delay for polite crawling
+Crawl-delay: 1
+
+# Block AI bots
+User-agent: GPTBot
+Disallow: /
+
+User-agent: CCBot
+Disallow: /

@@ -9,9 +9,6 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
   },
 
-  // Vercel 环境下使用 serverExternalPackages 优化冷启动
-  serverExternalPackages: [],
-
   // 图片域名配置（如果后续接入 CDN/OSS）
   images: {
     remotePatterns: [],

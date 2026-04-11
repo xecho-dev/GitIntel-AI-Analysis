@@ -25,14 +25,14 @@ AI 驱动的 GitHub 仓库智能分析工具，对任意公开仓库进行深度
 
 ```
 ┌─────────────────────────────────────┐
-│         Frontend  (Next.js)        │  ← Vercel 部署，端口 3000
+│         Frontend  (Next.js)        │  ← Docker 部署，端口 3000
 │    Next.js App Router + Tailwind    │
 │    Zustand / Framer Motion / SSE    │
 └───────────────┬─────────────────────┘
                 │ HTTP / SSE
                 ▼
 ┌─────────────────────────────────────┐
-│        BFF  (Next.js Route)         │  ← 同部署于 Vercel
+│        BFF  (Next.js Route)         │  ← 同部署于 Docker
 │   /frontend/app/api/analyze/route   │
 └───────────────┬─────────────────────┘
                 │ HTTP
@@ -267,23 +267,32 @@ data: [DONE]
 
 ## 部署
 
-### 前端 → Vercel
+### Docker Compose (推荐)
+
+一键启动所有服务：
+
+```bash
+docker-compose up -d
+```
+
+### 手动部署
+
+#### 前端 + BFF
 
 ```bash
 cd frontend
-vercel deploy
+pnpm install
+pnpm build
+docker build -t gitintel-frontend .
+docker run -p 3000:3000 gitintel-frontend
 ```
 
 需要设置的环境变量：`NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_ANON_KEY`、`NEXTAUTH_URL`、`NEXTAUTH_SECRET`、`GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`。
 
-### 后端 → Railway / Render / Fly.io
+#### 后端
 
 ```bash
 cd backend
-# Railway
-railway deploy
-
-# 或手动
 pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```

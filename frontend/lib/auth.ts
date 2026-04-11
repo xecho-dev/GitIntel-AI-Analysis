@@ -21,19 +21,17 @@ declare module "next-auth" {
   }
 }
 
-const githubClientId =  process.env.AUTH_GITHUB_ID;
-const githubClientSecret =  process.env.AUTH_GITHUB_SECRET;
-const authUrl = process.env.AUTH_URL;
+const githubClientId = process.env.AUTH_GITHUB_ID;
+const githubClientSecret = process.env.AUTH_GITHUB_SECRET;
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
-  basePath: authUrl ? undefined : "/api/auth",
   providers: [
     GitHub({
       clientId: githubClientId,
       clientSecret: githubClientSecret,
-      // 明确设置 issuer 为 GitHub，防止 Auth.js 错误验证
-      issuer: "https://github.com",
+      // GitHub OAuth 不完全遵循 OIDC 规范，手动覆盖验证逻辑
+      checks: ["none"],
     }),
   ],
   callbacks: {

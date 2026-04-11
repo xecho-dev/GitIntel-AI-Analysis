@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link, useLocation, Outlet } from 'umi';
 import { Layout as AntdLayout, Menu, theme } from 'antd';
 import {
   DashboardOutlined,
@@ -6,8 +7,6 @@ import {
   AuditOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
-import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { THEME_COLORS } from '@/constants';
 
 const { Sider, Content } = AntdLayout;
 
@@ -15,35 +14,52 @@ const menuItems = [
   {
     key: '/dashboard',
     icon: <DashboardOutlined />,
-    label: '全局概览',
+    label: <Link to="/dashboard">全局概览</Link>,
   },
   {
     key: '/users',
     icon: <UserOutlined />,
-    label: '用户管理',
+    label: <Link to="/users">用户管理</Link>,
   },
   {
     key: '/audit',
     icon: <AuditOutlined />,
-    label: '分析审计',
+    label: <Link to="/audit">分析审计</Link>,
   },
   {
     key: '/settings',
     icon: <SettingOutlined />,
-    label: '系统设置',
+    label: <Link to="/settings">系统设置</Link>,
   },
 ];
 
+const THEME_COLORS = {
+  primary: '#acc7ff',
+  primaryContainer: '#498fff',
+  secondary: '#f4fff5',
+  secondaryFixedDim: '#00e297',
+  tertiary: '#d5bbff',
+  tertiaryContainer: '#a875fc',
+  error: '#ffb4ab',
+  background: '#10141a',
+  surface: '#10141a',
+  surfaceContainer: '#1c2026',
+  surfaceContainerLow: '#181c22',
+  surfaceContainerLowest: '#0a0e14',
+  surfaceContainerHigh: '#262a31',
+  surfaceContainerHighest: '#31353c',
+  onBackground: '#dfe2eb',
+  onSurface: '#dfe2eb',
+  onSurfaceVariant: '#c1c6d6',
+  outline: '#8b909f',
+  outlineVariant: '#414754',
+};
+
 export default function Layout() {
   const location = useLocation();
-  const navigate = useNavigate();
   const {
     token: { colorBgContainer, borderRadiusLG },
   } = theme.useToken();
-
-  const handleMenuClick = ({ key }: { key: string }) => {
-    navigate(key);
-  };
 
   return (
     <AntdLayout className="min-h-screen" style={{ background: THEME_COLORS.background }}>
@@ -69,7 +85,6 @@ export default function Layout() {
           mode="inline"
           selectedKeys={[location.pathname]}
           items={menuItems}
-          onClick={handleMenuClick}
           style={{
             background: 'transparent',
             border: 'none',

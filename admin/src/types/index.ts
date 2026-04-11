@@ -72,3 +72,27 @@ export interface AdminOverviewStats {
   high_risk_count: number;
   medium_risk_count: number;
 }
+
+// ─── 主题颜色常量 ────────────────────────────────────────────────────────────
+
+export const THEME_COLORS = {
+  primary: '#acc7ff',
+  primaryContainer: '#498fff',
+  secondary: '#f4fff5',
+  secondaryFixedDim: '#00e297',
+  tertiary: '#d5bbff',
+  tertiaryContainer: '#a875fc',
+  error: '#ffb4ab',
+  background: '#10141a',
+  surface: '#10141a',
+  surfaceContainer: '#1c2026',
+  surfaceContainerLow: '#181c22',
+  surfaceContainerLowest: '#0a0e14',
+  surfaceContainerHigh: '#262a31',
+  surfaceContainerHighest: '#31353c',
+  onBackground: '#dfe2eb',
+  onSurface: '#dfe2eb',
+  onSurfaceVariant: '#c1c6d6',
+  outline: '#8b909f',
+  outlineVariant: '#414754',
+};

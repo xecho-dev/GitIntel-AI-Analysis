@@ -5,7 +5,7 @@ import type {
   AdminOverviewStats,
 } from '@/types';
 
-const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const baseURL = '/api';
 
 const request = axios.create({
   baseURL,
@@ -32,15 +32,15 @@ export default request;
 
 /** 系统概览统计数据 */
 export const getOverviewStats = (): Promise<AdminOverviewStats> =>
-  request.get('/api/admin/overview');
+  request.get('/admin/overview');
 
 /** 全部用户列表（分页） */
 export const getUserList = (params?: { page?: number; pageSize?: number; search?: string }): Promise<AdminUserListResponse> =>
-  request.get('/api/admin/users', { params });
+  request.get('/admin/users', { params });
 
 /** 更新指定用户信息（禁用/启用等） */
 export const updateUser = (userId: string, data: Record<string, unknown>) =>
-  request.put(`/api/admin/users/${userId}`, data);
+  request.put(`/admin/users/${userId}`, data);
 
 /** 全站分析历史（分页） */
 export const getAnalysisHistory = (params?: {
@@ -48,8 +48,8 @@ export const getAnalysisHistory = (params?: {
   pageSize?: number;
   search?: string;
 }): Promise<AdminHistoryListResponse> =>
-  request.get('/api/admin/analysis-history', { params });
+  request.get('/admin/analysis-history', { params });
 
 /** 删除指定分析记录 */
 export const deleteAnalysisRecord = (recordId: string) =>
-  request.delete(`/api/admin/analysis-history/${recordId}`);
+  request.delete(`/admin/analysis-history/${recordId}`);

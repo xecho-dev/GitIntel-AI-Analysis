@@ -12,6 +12,7 @@
     "test:coverage": "pnpm exec jest --coverage"
   },
   "dependencies": {
+    "@auth/core": "^0.38.0",
     "@monaco-editor/react": "^4.7.0",
     "@supabase/supabase-js": "^2.49.0",
     "clsx": "^2.1.1",

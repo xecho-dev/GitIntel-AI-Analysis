@@ -46,6 +46,8 @@ export interface AdminAnalysisItem {
   risk_level_bg: string | null;
   border_color: string | null;
   result_data: Record<string, unknown> | null;
+  langsmith_trace_id?: string | null;
+  thread_id?: string | null;
   created_at: string;
 }
 
@@ -96,3 +98,50 @@ export const THEME_COLORS = {
   outline: '#8b909f',
   outlineVariant: '#414754',
 };
+
+// ─── 分析详情 ────────────────────────────────────────────────────────────────
+
+export interface HistoryStats {
+  total_scans: number;
+  avg_health_score: number;
+  high_risk_count: number;
+  medium_risk_count: number;
+}
+
+export interface AdminHistoryDetailResponse {
+  history: AdminAnalysisItem;
+  user: AdminUserItem;
+  langsmith?: LangSmithTraceInfo | null;
+}
+
+export interface AdminUserHistoryResponse {
+  user: AdminUserItem;
+  history: AdminHistoryListResponse;
+}
+
+export interface LangSmithTraceInfo {
+  project_name: string;
+  run_url?: string | null;
+  trace_id?: string | null;
+  total_tokens: number;
+  total_cost_usd: number;
+  total_runs: number;
+  agents: string[];
+  total_prompt_tokens?: number;
+  total_completion_tokens?: number;
+  total_duration_ms?: number;
+}
+
+export interface HistoryFilterParams {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  user_id?: string;
+  risk_level?: string;
+  quality_score_min?: number;
+  quality_score_max?: number;
+  date_from?: string;
+  date_to?: string;
+  repo_name?: string;
+  branch?: string;
+}

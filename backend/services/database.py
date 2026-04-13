@@ -80,6 +80,8 @@ def save_analysis(
     repo_url: str,
     branch: str,
     result_data: dict,
+    langsmith_trace_id: Optional[str] = None,
+    thread_id: Optional[str] = None,
 ) -> SaveAnalysisResponse:
     """保存一次分析结果，返回新记录的 id。"""
     # 先找 user uuid（users.id 是 UUID，而 analysis_history.user_id 需要 UUID）
@@ -115,6 +117,8 @@ def save_analysis(
             "risk_level_color": metrics["risk_level_color"],
             "risk_level_bg": metrics["risk_level_bg"],
             "border_color": metrics["border_color"],
+            "langsmith_trace_id": langsmith_trace_id,
+            "thread_id": thread_id,
         }
     ).execute()
 
@@ -220,6 +224,8 @@ def get_history(
             risk_level_bg=r.get("risk_level_bg"),
             border_color=r.get("border_color"),
             result_data=r.get("result_data"),
+            langsmith_trace_id=r.get("langsmith_trace_id"),
+            thread_id=r.get("thread_id"),
             created_at=r["created_at"],
         )
         for r in data.data
@@ -535,6 +541,8 @@ def db_get_all_history(
             risk_level_bg=r.get("risk_level_bg"),
             border_color=r.get("border_color"),
             result_data=r.get("result_data"),
+            langsmith_trace_id=r.get("langsmith_trace_id"),
+            thread_id=r.get("thread_id"),
             created_at=r["created_at"],
         )
         for r in data.data
@@ -557,3 +565,233 @@ def db_delete_history_by_admin(sb: Client, record_id: str) -> bool:
     """管理端：删除指定分析记录（不校验用户权限）。"""
     result = sb.table("analysis_history").delete().eq("id", record_id).execute()
     return (result.data is not None and len(result.data) > 0) or (hasattr(result, "count") and result.count > 0)
+
+
+def db_get_history_by_id(sb: Client, record_id: str) -> Optional[AdminHistoryItem]:
+    """根据 record_id 获取单条分析历史记录。"""
+    data = (
+        sb.table("analysis_history")
+        .select("*")
+        .eq("id", record_id)
+        .maybe_single()
+        .execute()
+    )
+    if data is None:
+        return None
+    r = data.data
+    if not r or not isinstance(r, dict):
+        return None
+    return AdminHistoryItem(
+        id=r["id"],
+        user_id=r["user_id"],
+        repo_url=r["repo_url"],
+        repo_name=r["repo_name"],
+        branch=r.get("branch", "main"),
+        health_score=r.get("health_score"),
+        quality_score=r.get("quality_score"),
+        risk_level=r.get("risk_level"),
+        risk_level_color=r.get("risk_level_color"),
+        risk_level_bg=r.get("risk_level_bg"),
+        border_color=r.get("border_color"),
+        result_data=r.get("result_data"),
+        langsmith_trace_id=r.get("langsmith_trace_id"),
+        thread_id=r.get("thread_id"),
+        created_at=r["created_at"],
+    )
+
+
+def db_get_user_by_id(sb: Client, user_id: str) -> Optional[AdminUserItem]:
+    """根据 user_id（UUID）获取用户信息。"""
+    data = (
+        sb.table("users")
+        .select("*")
+        .eq("id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    if data is None:
+        return None
+    r = data.data
+    if not r or not isinstance(r, dict):
+        return None
+    return AdminUserItem(
+        id=r["id"],
+        auth_user_id=r["auth_user_id"],
+        github_id=r.get("github_id"),
+        login=r["login"],
+        email=r.get("email"),
+        avatar_url=r.get("avatar_url"),
+        name=r.get("name"),
+        bio=r.get("bio"),
+        company=r.get("company"),
+        location=r.get("location"),
+        blog=r.get("blog"),
+        public_repos=r.get("public_repos", 0),
+        followers=r.get("followers", 0),
+        following=r.get("following", 0),
+        created_at=r["created_at"],
+        updated_at=r.get("updated_at", r["created_at"]),
+    )
+
+
+def db_get_user_analysis_history(
+    sb: Client,
+    user_id: str,
+    page: int = 1,
+    page_size: int = 10,
+    search: Optional[str] = None,
+) -> AdminHistoryListResponse:
+    """获取指定用户的分析历史（分页）。"""
+    offset = (page - 1) * page_size
+
+    query = (
+        sb.table("analysis_history")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .range(offset, offset + page_size - 1)
+    )
+    if search:
+        query = query.ilike("repo_name", f"%{search}%")
+
+    data = query.execute()
+
+    count_query = sb.table("analysis_history").select("id", count="exact").eq("user_id", user_id)
+    if search:
+        count_query = count_query.ilike("repo_name", f"%{search}%")
+    count_data = count_query.execute()
+    total = count_data.count or 0
+
+    stats_all = sb.table("analysis_history").select("health_score, risk_level").eq("user_id", user_id).execute()
+    all_rows = stats_all.data or []
+    scores = [r["health_score"] for r in all_rows if r.get("health_score") is not None]
+    avg_hs = round(sum(scores) / len(scores), 1) if scores else 0.0
+    high_count = sum(1 for r in all_rows if r.get("risk_level") == "高危")
+    med_count = sum(1 for r in all_rows if r.get("risk_level") == "中等")
+
+    items = [
+        AdminHistoryItem(
+            id=r["id"],
+            user_id=r["user_id"],
+            repo_url=r["repo_url"],
+            repo_name=r["repo_name"],
+            branch=r.get("branch", "main"),
+            health_score=r.get("health_score"),
+            quality_score=r.get("quality_score"),
+            risk_level=r.get("risk_level"),
+            risk_level_color=r.get("risk_level_color"),
+            risk_level_bg=r.get("risk_level_bg"),
+            border_color=r.get("border_color"),
+            result_data=r.get("result_data"),
+            langsmith_trace_id=r.get("langsmith_trace_id"),
+            thread_id=r.get("thread_id"),
+            created_at=r["created_at"],
+        )
+        for r in data.data
+    ]
+    return AdminHistoryListResponse(
+        items=items,
+        total=total,
+        page=page,
+        pageSize=page_size,
+        stats=HistoryStats(
+            total_scans=len(all_rows),
+            avg_health_score=avg_hs,
+            high_risk_count=high_count,
+            medium_risk_count=med_count,
+        ),
+    )
+
+
+def db_get_filtered_history(
+    sb: Client,
+    page: int = 1,
+    page_size: int = 10,
+    user_id: Optional[str] = None,
+    risk_level: Optional[str] = None,
+    quality_score_min: Optional[float] = None,
+    quality_score_max: Optional[float] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    repo_name: Optional[str] = None,
+    branch: Optional[str] = None,
+    search: Optional[str] = None,
+) -> AdminHistoryListResponse:
+    """管理端：高级筛选分析历史（支持多条件组合）。"""
+    offset = (page - 1) * page_size
+
+    query = sb.table("analysis_history").select("*").order("created_at", desc=True)
+
+    if user_id:
+        query = query.eq("user_id", user_id)
+    if risk_level:
+        query = query.eq("risk_level", risk_level)
+    if date_from:
+        query = query.gte("created_at", f"{date_from}T00:00:00Z")
+    if date_to:
+        query = query.lte("created_at", f"{date_to}T23:59:59Z")
+    if repo_name:
+        query = query.ilike("repo_name", f"%{repo_name}%")
+    if branch:
+        query = query.eq("branch", branch)
+
+    # 质量分筛选（通过 ilike 或范围过滤，health_score 存储的是数值）
+    # 先执行主查询，再在内存中过滤 health_score 范围（Supabase postgrest 不支持 range on numeric via python sdk 直接）
+    # 使用 gte/lte 配合 health_score 字段
+    if quality_score_min is not None:
+        query = query.gte("health_score", quality_score_min)
+    if quality_score_max is not None:
+        query = query.lte("health_score", quality_score_max)
+
+    data = query.execute()
+
+    # 内存中过滤 search（repo_name 模糊搜索已在服务端处理）
+    filtered = data.data or []
+    if search:
+        import re
+        pattern = re.compile(search, re.IGNORECASE)
+        filtered = [r for r in filtered if pattern.search(r.get("repo_name", "")) or pattern.search(r.get("repo_url", ""))]
+
+    total = len(filtered)
+    page_items = filtered[offset:offset + page_size]
+
+    # 统计（全局，不受筛选影响以提供参照）
+    stats_all = sb.table("analysis_history").select("health_score, risk_level").execute()
+    all_rows = stats_all.data or []
+    scores = [r["health_score"] for r in all_rows if r.get("health_score") is not None]
+    avg_hs = round(sum(scores) / len(scores), 1) if scores else 0.0
+    high_count = sum(1 for r in all_rows if r.get("risk_level") == "高危")
+    med_count = sum(1 for r in all_rows if r.get("risk_level") == "中等")
+
+    items = [
+        AdminHistoryItem(
+            id=r["id"],
+            user_id=r["user_id"],
+            repo_url=r["repo_url"],
+            repo_name=r["repo_name"],
+            branch=r.get("branch", "main"),
+            health_score=r.get("health_score"),
+            quality_score=r.get("quality_score"),
+            risk_level=r.get("risk_level"),
+            risk_level_color=r.get("risk_level_color"),
+            risk_level_bg=r.get("risk_level_bg"),
+            border_color=r.get("border_color"),
+            result_data=r.get("result_data"),
+            langsmith_trace_id=r.get("langsmith_trace_id"),
+            thread_id=r.get("thread_id"),
+            created_at=r["created_at"],
+        )
+        for r in page_items
+    ]
+    return AdminHistoryListResponse(
+        items=items,
+        total=total,
+        page=page,
+        pageSize=page_size,
+        stats=HistoryStats(
+            total_scans=len(all_rows),
+            avg_health_score=avg_hs,
+            high_risk_count=high_count,
+            medium_risk_count=med_count,
+        ),
+    )

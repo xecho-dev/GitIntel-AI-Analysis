@@ -3,6 +3,9 @@ import type {
   AdminUserListResponse,
   AdminHistoryListResponse,
   AdminOverviewStats,
+  AdminHistoryDetailResponse,
+  AdminUserHistoryResponse,
+  HistoryFilterParams,
 } from '@/types';
 
 const baseURL = '/api';
@@ -53,3 +56,19 @@ export const getAnalysisHistory = (params?: {
 /** 删除指定分析记录 */
 export const deleteAnalysisRecord = (recordId: string) =>
   request.delete(`/admin/analysis-history/${recordId}`);
+
+/** 分析历史高级筛选（支持多条件） */
+export const getFilteredHistory = (params?: HistoryFilterParams): Promise<AdminHistoryListResponse> =>
+  request.get('/admin/analysis-history', { params });
+
+/** 获取单条分析记录详情（包含用户信息 + LangSmith追踪信息） */
+export const getHistoryDetail = (recordId: string): Promise<AdminHistoryDetailResponse> =>
+  request.get(`/admin/analysis-history/${recordId}`);
+
+/** 获取指定用户的分析历史（包含用户基本信息） */
+export const getUserHistory = (userId: string, params?: {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+}): Promise<AdminUserHistoryResponse> =>
+  request.get(`/admin/users/${userId}/history`, { params });

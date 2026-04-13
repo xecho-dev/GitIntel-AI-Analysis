@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation, Outlet } from 'umi';
-import { Layout, Menu, Button, Dropdown, Avatar, Space, Typography } from 'antd';
+import { Layout, Menu, Button, Dropdown, Avatar, Space, Typography, ConfigProvider, App as AntApp } from 'antd';
+import zhCN from 'antd/locale/zh_CN';
 import type { MenuProps } from 'antd';
 import {
   DashboardOutlined,
@@ -9,15 +10,50 @@ import {
   SettingOutlined,
   BellOutlined,
   QuestionCircleOutlined,
-  GithubOutlined,
   BranchesOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons';
+import dayjs from 'dayjs';
+import 'dayjs/locale/zh-cn';
+
+dayjs.locale('zh-cn');
+
+const lightTheme: React.ComponentProps<typeof ConfigProvider>['theme'] = {
+  token: {
+    colorPrimary: '#3b82f6',
+    colorBgLayout: '#f5f5f5',
+    colorBgContainer: '#ffffff',
+    colorTextBase: '#1a1a1a',
+    colorTextSecondary: '#6b7280',
+    colorBorder: '#e5e7eb',
+    colorBorderSecondary: '#f3f4f6',
+    borderRadius: 8,
+    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  },
+  components: {
+    Layout: {
+      siderBg: '#ffffff',
+      headerBg: '#ffffff',
+      bodyBg: '#f5f5f5',
+    },
+    Menu: {
+      itemBg: 'transparent',
+      itemSelectedBg: '#eff6ff',
+      itemSelectedColor: '#3b82f6',
+      itemHoverBg: '#f9fafb',
+    },
+    Card: {
+      colorBgContainer: '#ffffff',
+    },
+  },
+};
 
 const { Sider, Content, Header } = Layout;
 const { Text } = Typography;
 
 const menuItems = [
   { key: '/dashboard', icon: <DashboardOutlined />, label: <Link to="/dashboard">全局概览</Link> },
+  { key: '/analysis-history', icon: <HistoryOutlined />, label: <Link to="/analysis-history">分析记录</Link> },
   { key: '/users', icon: <UserOutlined />, label: <Link to="/users">用户管理</Link> },
   { key: '/audit', icon: <AuditOutlined />, label: <Link to="/audit">分析审计</Link> },
   { key: '/settings', icon: <SettingOutlined />, label: <Link to="/settings">系统设置</Link> },
@@ -35,144 +71,148 @@ function AdminLayout() {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Sider
-        width={240}
-        collapsible
-        collapsed={collapsed}
-        onCollapse={setCollapsed}
-        style={{
-          background: '#001529',
-          boxShadow: '2px 0 8px rgba(0,0,0,0.15)',
-          position: 'fixed',
-          left: 0,
-          top: 0,
-          bottom: 0,
-          zIndex: 100,
-        }}
-      >
-        {/* Logo 区域 */}
-        <div
-          style={{
-            height: 64,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: collapsed ? 'center' : 'flex-start',
-            padding: collapsed ? 0 : '0 20px',
-            borderBottom: '1px solid rgba(255,255,255,0.06)',
-            cursor: 'pointer',
-          }}
-        >
-          <div
+    <ConfigProvider theme={lightTheme} locale={zhCN}>
+      <AntApp>
+        <Layout style={{ minHeight: '100vh' }}>
+          <Sider
+            width={220}
+            collapsible
+            collapsed={collapsed}
+            onCollapse={setCollapsed}
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: 6,
-              background: 'linear-gradient(135deg, #1677ff 0%, #4096ff 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 2px 8px rgba(22,119,255,0.4)',
+              background: '#ffffff',
+              boxShadow: '1px 0 0 #e5e7eb',
+              position: 'fixed',
+              left: 0,
+              top: 0,
+              bottom: 0,
+              zIndex: 100,
+              borderRight: '1px solid #e5e7eb',
             }}
           >
-            <BranchesOutlined style={{ color: '#fff', fontSize: 16 }} />
-          </div>
-          {!collapsed && (
-            <span
+            {/* Logo 区域 */}
+            <div
               style={{
-                marginLeft: 12,
-                color: '#fff',
-                fontSize: 16,
-                fontWeight: 600,
-                letterSpacing: '-0.01em',
+                height: 64,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                padding: collapsed ? 0 : '0 20px',
+                borderBottom: '1px solid #f3f4f6',
+                cursor: 'pointer',
               }}
             >
-              GitIntel
-            </span>
-          )}
-        </div>
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  background: '#3b82f6',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <BranchesOutlined style={{ color: '#fff', fontSize: 16 }} />
+              </div>
+              {!collapsed && (
+                <span
+                  style={{
+                    marginLeft: 10,
+                    color: '#1a1a1a',
+                    fontSize: 16,
+                    fontWeight: 700,
+                    letterSpacing: '-0.01em',
+                  }}
+                >
+                  GitIntel
+                </span>
+              )}
+            </div>
 
-        {/* 菜单 */}
-        <Menu
-          mode="inline"
-          selectedKeys={[location.pathname]}
-          defaultSelectedKeys={['/dashboard']}
-          items={menuItems}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            marginTop: 12,
-          }}
-          theme="dark"
-        />
+            {/* 菜单 */}
+            <Menu
+              mode="inline"
+              selectedKeys={[location.pathname]}
+              defaultSelectedKeys={['/dashboard']}
+              items={menuItems}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                marginTop: 8,
+              }}
+              theme="light"
+            />
 
-        {/* 底部信息 */}
-        {!collapsed && (
-          <div
-            style={{
-              position: 'absolute',
-              bottom: 0,
-              left: 0,
-              right: 0,
-              padding: '16px 20px',
-              borderTop: '1px solid rgba(255,255,255,0.06)',
-            }}
-          >
-            <Space direction="vertical" size={4}>
-              <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11 }}>
-                GitIntel Admin v1.0.0
-              </Text>
-              <Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 10 }}>
-                Powered by AI
-              </Text>
-            </Space>
-          </div>
-        )}
-      </Sider>
+            {/* 底部信息 */}
+            {!collapsed && (
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  padding: '16px 20px',
+                  borderTop: '1px solid #f3f4f6',
+                }}
+              >
+                <Space direction="vertical" size={2}>
+                  <Text style={{ color: '#9ca3af', fontSize: 11 }}>
+                    GitIntel Admin v1.0.0
+                  </Text>
+                  <Text style={{ color: '#d1d5db', fontSize: 10 }}>
+                    Powered by AI
+                  </Text>
+                </Space>
+              </div>
+            )}
+          </Sider>
 
-      <Layout style={{ marginLeft: collapsed ? 80 : 240, transition: 'margin-left 0.2s' }}>
-        {/* 顶部导航栏 */}
-        <Header
-          style={{
-            background: '#fff',
-            padding: '0 24px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            boxShadow: '0 1px 4px rgba(0,21,41,0.08)',
-            position: 'sticky',
-            top: 0,
-            zIndex: 99,
-            height: 56,
-          }}
-        >
-          <Space size={16}>
-            <Button type="text" icon={<QuestionCircleOutlined />} />
-            <Button type="text" icon={<BellOutlined />} badge={{ count: 3 }} />
-            <Button type="text" icon={<GithubOutlined />} href="https://github.com" target="_blank" />
-            <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-              <Space style={{ cursor: 'pointer' }}>
-                <Avatar size={32} style={{ background: '#1677ff' }}>
-                  A
-                </Avatar>
-                <Text strong>Admin</Text>
+          <Layout style={{ marginLeft: collapsed ? 64 : 220, transition: 'margin-left 0.2s' }}>
+            {/* 顶部导航栏 */}
+            <Header
+              style={{
+                background: '#ffffff',
+                padding: '0 24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                position: 'sticky',
+                top: 0,
+                zIndex: 99,
+                height: 60,
+                borderBottom: '1px solid #f3f4f6',
+              }}
+            >
+              <Space size={12}>
+                <Button type="text" icon={<QuestionCircleOutlined />} />
+                <Button type="text" icon={<BellOutlined />} badge={{ count: 3 }} />
+                <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
+                  <Space style={{ cursor: 'pointer' }}>
+                    <Avatar size={32} style={{ background: '#3b82f6' }}>
+                      A
+                    </Avatar>
+                    <Text strong style={{ fontSize: 14 }}>Admin</Text>
+                  </Space>
+                </Dropdown>
               </Space>
-            </Dropdown>
-          </Space>
-        </Header>
+            </Header>
 
-        {/* 内容区域 */}
-        <Content
-          style={{
-            padding: 24,
-            background: '#f5f5f5',
-            minHeight: 'calc(100vh - 56px)',
-          }}
-        >
-          <Outlet />
-        </Content>
-      </Layout>
-    </Layout>
+            {/* 内容区域 */}
+            <Content
+              style={{
+                padding: 24,
+                background: '#f5f5f5',
+                minHeight: 'calc(100vh - 60px)',
+              }}
+            >
+              <Outlet />
+            </Content>
+          </Layout>
+        </Layout>
+      </AntApp>
+    </ConfigProvider>
   );
 }
 

@@ -77,6 +77,10 @@ app = FastAPI(
 _allowed_origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:8000",
+    "http://localhost:8001",
+    "http://127.0.0.1:8000",
+    "http://127.0.0.1:8001",
 ]
 if os.getenv("FRONTEND_URL"):
     _allowed_origins.append(os.getenv("FRONTEND_URL"))
@@ -108,6 +112,9 @@ async def analyze(req: AnalyzeRequest, request: Request):
     auth_user_id = user.get("sub") or user.get("id") or ""
     logger.info(f"[/api/analyze] 认证通过: auth_user_id={auth_user_id}")
 
+    # 生成 thread_id 用于 LangGraph checkpoint 和 LangSmith 查询关联
+    thread_id = f"{req.repo_url}::{req.branch}"
+
     async def event_stream():
         collected_events: list[dict] = []
 
@@ -125,19 +132,19 @@ async def analyze(req: AnalyzeRequest, request: Request):
             return event_str
 
         try:
-            async for event in stream_analysis_sse(req.repo_url, req.branch):
+            async for event in stream_analysis_sse(req.repo_url, req.branch, thread_id=thread_id):
                 yield collect(event)
         except Exception as e:
             logger.error(f"[/api/analyze] stream 异常: {type(e).__name__}: {e}")
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
             yield "data: [DONE]\n\n"
+            return
 
         # SSE 结束，收集完毕，保存到数据库
         if not collected_events:
             logger.warning(f"[/api/analyze] 无 result 事件，跳过保存")
             return
 
-        # 聚合 result_data
         result_data: dict[str, Any] = {}
         for evt in collected_events:
             agent = evt.get("agent", "")
@@ -157,7 +164,6 @@ async def analyze(req: AnalyzeRequest, request: Request):
             logger.error(f"[/api/analyze] Supabase 连接失败: {e}")
             return
 
-        # save_analysis 第一个参数必须是 NextAuth 的 auth_user_id（sub），不是 users 表的主键 id
         if not get_user_uuid(sb, auth_user_id):
             logger.warning(
                 f"[/api/analyze] users 表中无 auth_user_id={auth_user_id}，跳过保存。"
@@ -166,7 +172,7 @@ async def analyze(req: AnalyzeRequest, request: Request):
             return
 
         try:
-            saved = save_analysis(sb, auth_user_id, req.repo_url, req.branch, result_data)
+            saved = save_analysis(sb, auth_user_id, req.repo_url, req.branch, result_data, thread_id=thread_id)
             logger.info(f"[/api/analyze] 历史记录保存成功: id={saved.id}")
         except Exception as e:
             logger.error(f"[/api/analyze] 保存历史记录失败: {type(e).__name__}: {e}")
@@ -224,7 +230,8 @@ async def api_save_analysis(req: SaveAnalysisRequest, request: Request):
             detail="用户资料未同步，请先在账户中心完成 GitHub 资料同步后再保存。",
         )
 
-    result = save_analysis(sb, auth_user_id, req.repo_url, req.branch, req.result_data)
+    result = save_analysis(sb, auth_user_id, req.repo_url, req.branch, req.result_data,
+                           thread_id=f"{req.repo_url}::{req.branch}")
     return {"id": result.id, "created_at": result.created_at}
 
 
@@ -524,15 +531,107 @@ async def api_admin_list_history(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     search: str | None = Query(None),
+    user_id: str | None = Query(None),
+    risk_level: str | None = Query(None, description="高危|中等|极低"),
+    quality_score_min: float | None = Query(None, ge=0, le=100),
+    quality_score_max: float | None = Query(None, ge=0, le=100),
+    date_from: str | None = Query(None, description="YYYY-MM-DD"),
+    date_to: str | None = Query(None, description="YYYY-MM-DD"),
+    repo_name: str | None = Query(None),
+    branch: str | None = Query(None),
 ):
-    """管理端：获取全站所有用户的分析历史（分页）"""
+    """管理端：获取全站所有用户的分析历史（支持高级筛选分页）"""
     try:
         sb = get_supabase_admin()
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
-    from services.database import db_get_all_history
-    return db_get_all_history(sb, page, page_size, search)
+    from services.database import db_get_filtered_history
+    return db_get_filtered_history(
+        sb,
+        page=page,
+        page_size=page_size,
+        user_id=user_id,
+        risk_level=risk_level,
+        quality_score_min=quality_score_min,
+        quality_score_max=quality_score_max,
+        date_from=date_from,
+        date_to=date_to,
+        repo_name=repo_name,
+        branch=branch,
+        search=search,
+    )
+
+
+@app.get("/api/admin/analysis-history/{record_id}", response_model=dict)
+async def api_admin_history_detail(record_id: str):
+    """管理端：获取单条分析记录的完整详情（包含关联用户信息 + 真实 LangSmith 追踪数据）"""
+    try:
+        sb = get_supabase_admin()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    from services.database import db_get_history_by_id, db_get_user_by_id
+    from services.langsmith_service import get_langsmith_stats
+    from schemas.history import AdminHistoryDetailResponse, LangSmithTraceInfo
+
+    history = db_get_history_by_id(sb, record_id)
+    if not history:
+        raise HTTPException(status_code=404, detail="记录不存在")
+
+    user = db_get_user_by_id(sb, history.user_id)
+
+    # 调用 LangSmith API 获取真实追踪数据
+    langsmith_info = None
+    ls_stats = get_langsmith_stats(
+        repo_name=history.repo_name,
+        trace_id=history.langsmith_trace_id,
+        thread_id=history.thread_id,
+        created_at=history.created_at,
+    )
+    if ls_stats:
+        langsmith_info = LangSmithTraceInfo(
+            project_name=ls_stats.project_name,
+            run_url=ls_stats.run_url,
+            trace_id=ls_stats.trace_id,
+            total_tokens=ls_stats.total_tokens,
+            total_cost_usd=ls_stats.total_cost_usd,
+            total_runs=ls_stats.total_runs,
+            agents=ls_stats.agents,
+            total_prompt_tokens=ls_stats.total_prompt_tokens,
+            total_completion_tokens=ls_stats.total_completion_tokens,
+            total_duration_ms=ls_stats.total_duration_ms,
+        )
+
+    return AdminHistoryDetailResponse(
+        history=history,
+        user=user,
+        langsmith=langsmith_info,
+    ).model_dump(mode="json")
+
+
+@app.get("/api/admin/users/{user_id}/history", response_model=dict)
+async def api_admin_user_history(
+    user_id: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    search: str | None = Query(None),
+):
+    """管理端：获取指定用户的分析历史（包含用户信息）"""
+    try:
+        sb = get_supabase_admin()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    from services.database import db_get_user_by_id, db_get_user_analysis_history
+    from schemas.history import AdminUserHistoryResponse
+
+    user = db_get_user_by_id(sb, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    history = db_get_user_analysis_history(sb, user_id, page, page_size, search)
+    return AdminUserHistoryResponse(user=user, history=history).model_dump(mode="json")
 
 
 @app.delete("/api/admin/analysis-history/{record_id}", response_model=dict)

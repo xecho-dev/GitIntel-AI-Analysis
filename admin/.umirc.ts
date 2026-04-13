@@ -11,6 +11,7 @@ export default defineConfig({
       routes: [
         { path: '/', redirect: '/dashboard' },
         { path: '/dashboard', component: '@/pages/dashboard' },
+        { path: '/analysis-history', component: '@/pages/analysis-history' },
         { path: '/users', component: '@/pages/users' },
         { path: '/audit', component: '@/pages/audit' },
         { path: '/settings', component: '@/pages/settings' },

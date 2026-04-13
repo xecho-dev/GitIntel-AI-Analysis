@@ -12,7 +12,7 @@
 #   5. 健康检查确认部署成功
 #
 # 需要的 Secrets（请在 GitHub 仓库 Settings > Secrets 中配置）：
-#   SERVER_HOST          - 服务器 IP（如 47.80.59.132）
+#   SERVER_HOST          - 服务器 IP 或域名（如 gitintel.top 或 47.80.59.132）
 #   SERVER_USER          - 服务器用户名（如 root 或 deploy）
 #   SERVER_SSH_KEY      - SSH 私钥（用于连接服务器）
 #   FRONTEND_URL         - 前端实际访问地址（必须包含协议，如 https://your-domain.com）
@@ -24,6 +24,10 @@
 #   AUTH_GITHUB_ID       - GitHub OAuth App Client ID
 #   AUTH_GITHUB_SECRET   - GitHub OAuth App Client Secret
 #   AUTH_URL             - 前端访问地址（同 FRONTEND_URL，用于 OAuth 回调）
+#   LANGSMITH_TRACING    - LangSmith 链路追踪开关（如 true）
+#   LANGSMITH_ENDPOINT   - LangSmith API 端点（如 https://api.smith.langchain.com）
+#   LANGSMITH_PROJECT    - LangSmith 项目名称
+#   LANGSMITH_API_KEY    - LangSmith API Key
 # ============================================================
 
 name: Deploy
@@ -182,6 +186,12 @@ jobs:
           REGISTRY=${{ env.REGISTRY }}
           REGISTRY_USERNAME=${{ github.actor }}
           REGISTRY_TOKEN=${{ secrets.GHP_TOKEN }}
+
+          # LangSmith（链路追踪，可选）
+          LANGSMITH_TRACING=${{ secrets.LANGSMITH_TRACING }}
+          LANGSMITH_ENDPOINT=${{ secrets.LANGSMITH_ENDPOINT }}
+          LANGSMITH_PROJECT=${{ secrets.LANGSMITH_PROJECT }}
+          LANGSMITH_API_KEY=${{ secrets.LANGSMITH_API_KEY }}
           ENVFILE
 
       - name: Upload env file to server
@@ -204,6 +214,10 @@ jobs:
           AUTH_GITHUB_SECRET="${{ secrets.AUTH_GITHUB_SECRET }}"
           AUTH_SECRET="${{ secrets.AUTH_SECRET }}"
           AUTH_URL="${{ secrets.FRONTEND_URL }}"
+          LANGSMITH_TRACING="${{ secrets.LANGSMITH_TRACING }}"
+          LANGSMITH_ENDPOINT="${{ secrets.LANGSMITH_ENDPOINT }}"
+          LANGSMITH_PROJECT="${{ secrets.LANGSMITH_PROJECT }}"
+          LANGSMITH_API_KEY="${{ secrets.LANGSMITH_API_KEY }}"
           DEPLOY_PATH="/opt/gitintel"
           COMMIT_SHORT="${{ needs.build.outputs.commit_short }}"
 
@@ -254,6 +268,10 @@ jobs:
                 - .env
               environment:
                 FRONTEND_URL: FRONTEND_URL_PLACEHOLDER
+                LANGSMITH_TRACING: LANGSMITH_TRACING_PLACEHOLDER
+                LANGSMITH_ENDPOINT: LANGSMITH_ENDPOINT_PLACEHOLDER
+                LANGSMITH_PROJECT: LANGSMITH_PROJECT_PLACEHOLDER
+                LANGSMITH_API_KEY: LANGSMITH_API_KEY_PLACEHOLDER
               networks:
                 - gitintel-net
               healthcheck:
@@ -275,6 +293,10 @@ jobs:
           sed -i "s|AUTH_GITHUB_ID_PLACEHOLDER|$AUTH_GITHUB_ID|g" docker-compose.yml
           sed -i "s|AUTH_GITHUB_SECRET_PLACEHOLDER|$AUTH_GITHUB_SECRET|g" docker-compose.yml
           sed -i "s|AUTH_SECRET_PLACEHOLDER|$AUTH_SECRET|g" docker-compose.yml
+          sed -i "s|LANGSMITH_TRACING_PLACEHOLDER|$LANGSMITH_TRACING|g" docker-compose.yml
+          sed -i "s|LANGSMITH_ENDPOINT_PLACEHOLDER|$LANGSMITH_ENDPOINT|g" docker-compose.yml
+          sed -i "s|LANGSMITH_PROJECT_PLACEHOLDER|$LANGSMITH_PROJECT|g" docker-compose.yml
+          sed -i "s|LANGSMITH_API_KEY_PLACEHOLDER|$LANGSMITH_API_KEY|g" docker-compose.yml
 
           echo "$REGISTRY_TOKEN" | docker login $REGISTRY -u $REGISTRY_USERNAME --password-stdin
           echo "正在拉取镜像..."

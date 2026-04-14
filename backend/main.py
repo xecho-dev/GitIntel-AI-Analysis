@@ -84,6 +84,10 @@ _allowed_origins = [
 ]
 if os.getenv("FRONTEND_URL"):
     _allowed_origins.append(os.getenv("FRONTEND_URL"))
+_allowed_origins.extend([
+    "https://gitintel.top",
+    "http://gitintel.top",
+])
 
 app.add_middleware(
     CORSMiddleware,

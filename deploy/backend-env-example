@@ -28,6 +28,11 @@ PORT=8000
 # 如果只有 IP，填入 http://IP:端口
 FRONTEND_URL=https://your-domain.com
 
+# ========== NextAuth 认证 ==========
+# NextAuth JWT 签名密钥（必须与前端 AUTH_SECRET 一致）
+# 用于后端解码前端传来的 NextAuth Session Token
+AUTH_SECRET=your-nextauth-secret-at-least-32-chars
+
 # ========== 可选功能 ==========
 # GitHub Token（访问私有仓库，用于代码分析）
 # 在 GitHub Settings > Developer settings > Personal access tokens 生成

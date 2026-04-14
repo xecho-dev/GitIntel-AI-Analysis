@@ -202,9 +202,10 @@ jobs:
           DASHVECTOR_COLLECTION=${{ secrets.DASHVECTOR_COLLECTION }}
           ENVFILE
 
-      - name: Upload env file to server
+      - name: Upload files to server
         run: |
           scp -o StrictHostKeyChecking=no deploy/env ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/gitintel.env
+          scp -o StrictHostKeyChecking=no deploy/nginx.conf ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/gitintel.conf
 
       # --- 执行远程部署脚本 ---
       - name: Deploy to server
@@ -322,7 +323,7 @@ jobs:
           if [ -f /etc/nginx/conf.d/gitintel.conf ]; then
             sudo cp /etc/nginx/conf.d/gitintel.conf /etc/nginx/conf.d/gitintel.conf.bak
           fi
-          sudo cp deploy/nginx.conf /etc/nginx/conf.d/gitintel.conf
+          sudo cp /tmp/gitintel.conf /etc/nginx/conf.d/gitintel.conf
 
           # 测试并重载 Nginx
           sudo nginx -t && sudo nginx -s reload

@@ -160,14 +160,26 @@ def require_auth(request: Request) -> dict:
     验证请求中的用户身份，返回一个包含 user_id 的 payload。
 
     认证优先级：
-    1. X-User-Id header（来自前端 BFF 层，信任来源，仅做非空检查）
-    2. Bearer token + JWT_SECRET / AUTH_SECRET 解码
+    1. X-User-Id header（来自前端 BFF 层，信任来源） + Authorization Bearer token（用于提取 GitHub accessToken）
+    2. 仅 Bearer token + JWT_SECRET / AUTH_SECRET 解码
     """
-    # 优先级 1：来自 BFF 的内部可信请求头
+    # 优先级 1：来自 BFF 的内部请求头 + Bearer token 提取 GitHub accessToken
     x_user_id = request.headers.get("X-User-Id")
     if x_user_id:
         print(f"[DEBUG require_auth] Using X-User-Id from BFF header: {x_user_id}")
-        return {"sub": x_user_id, "source": "bff-header"}
+        result: dict[str, str] = {"sub": x_user_id, "source": "bff-header"}
+
+        # 同时尝试从 Authorization header 中解码 JWT，提取 GitHub accessToken
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            jwt_payload = decode_jwt_token(token)
+            if jwt_payload:
+                # 提取用户的 GitHub OAuth Token（用于 PR 创建）
+                if jwt_payload.get("accessToken"):
+                    result["accessToken"] = jwt_payload["accessToken"]
+                print(f"[DEBUG require_auth] Extracted GitHub token from JWT: {bool(result.get('accessToken'))}")
+        return result
 
     # 优先级 2：标准 Bearer token
     token = get_token_from_request(request)

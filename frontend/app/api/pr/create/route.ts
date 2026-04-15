@@ -49,6 +49,7 @@ export async function POST(request: NextRequest) {
     headers: {
       "Content-Type": "application/json",
       "X-User-Id": userId,
+      "X-GitHub-Token": session.accessToken ?? "",
       ...(authHeader ? { "Authorization": authHeader } : {}),
     },
     body: JSON.stringify({ repo_url, branch, fixes, base_branch, pr_title, commit_message }),

@@ -446,14 +446,16 @@ async def api_pr_create(req: PRCreateRequest, request: Request):
     创建 GitHub Pull Request。
     流程：创建分支 → 提交文件修改 → 创建 PR
 
-    必须使用用户本人的 GitHub OAuth Token（从 NextAuth JWT 解码获取）。
+    GitHub Token 从 BFF 通过 X-GitHub-Token header 传递（不经过 JWT 解码）。
     若未授权 repo 权限，直接报错，不允许使用服务端 GITHUB_TOKEN 降级。
     """
+    # 先用 require_auth 验证用户身份（BFF 已在 X-User-Id 中提供）
     payload = require_auth(request)
     if not (payload.get("sub") or payload.get("id")):
         raise HTTPException(status_code=401, detail="无法识别用户身份")
 
-    user_github_token = payload.get("accessToken")
+    # 直接从 BFF 传递的 header 读取 GitHub OAuth token，不再从 JWT 解码
+    user_github_token = request.headers.get("X-GitHub-Token")
     if not user_github_token:
         raise HTTPException(
             status_code=403,

@@ -119,15 +119,19 @@ def decode_jwt_token(token: str) -> Optional[dict]:
     try:
         inner_jwt = _jwe_dir_aes_cbc_hs512_decrypt(token, secret)
         if not inner_jwt:
+            print("[DEBUG decode_jwt] JWE decrypt returned empty")
             return None
         inner_str = inner_jwt.decode("utf-8")
+        print(f"[DEBUG decode_jwt] JWE inner JWT length={len(inner_str)}")
         # 内层仍然是 JWS
         payload = jwt.decode(
             inner_str, secret, algorithms=["HS256"],
             options={"verify_aud": False, "verify_exp": True},
         )
+        print(f"[DEBUG decode_jwt] Successfully decoded JWE token, keys={list(payload.keys())}")
         return payload
-    except Exception:
+    except Exception as e:
+        print(f"[DEBUG decode_jwt] JWE decode failed: {type(e).__name__}: {e}")
         return None
 
 

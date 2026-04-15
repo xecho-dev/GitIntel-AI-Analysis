@@ -139,6 +139,22 @@ def get_token_from_request(request: Request) -> Optional[str]:
     return None
 
 
+def decode_auth_token(request: Request) -> dict:
+    """
+    解码 NextAuth JWT token，返回完整的 payload（包含用户信息和 GitHub access_token）。
+    返回空 dict 表示解码失败或无 token。
+    """
+    token = get_token_from_request(request)
+    if not token:
+        return {}
+
+    secret = os.getenv("AUTH_SECRET") or os.getenv("JWT_SECRET")
+    if not secret:
+        return {}
+
+    return decode_jwt_token(token) or {}
+
+
 def require_auth(request: Request) -> dict:
     """
     验证请求中的用户身份，返回一个包含 user_id 的 payload。

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Search, Zap, Loader2 } from "lucide-react";
@@ -13,6 +13,57 @@ export const AnalyzeInput = ({ userId }: { userId: string }) => {
   const [localRepoUrl, setLocalRepoUrl] = useState("https://github.com/xecho-dev/test.git");
   const isAnalyzing = useAppStore((s) => s.isAnalyzing);
   const error = useAppStore((s) => s.error);
+
+  // 检查是否有待恢复的分析任务（OAuth 授权后）
+  useEffect(() => {
+    const pendingRepoUrl = sessionStorage.getItem("gitintel_pending_repo_url");
+    const pendingBranch = sessionStorage.getItem("gitintel_pending_branch");
+
+    if (pendingRepoUrl) {
+      // 清除存储
+      sessionStorage.removeItem("gitintel_pending_repo_url");
+      sessionStorage.removeItem("gitintel_pending_branch");
+
+      // 设置仓库地址
+      setLocalRepoUrl(pendingRepoUrl);
+
+      // 延迟一点触发分析，等待 OAuth 状态同步
+      const timer = setTimeout(() => {
+        const store = useAppStore.getState();
+        if (session?.user && !store.isAnalyzing) {
+          // 直接调用 handleAnalyze 逻辑
+          const repoUrl = pendingRepoUrl;
+          store.reset();
+          store.setError(null);
+          store.setIsAnalyzing(true);
+          store.setRepoUrl(repoUrl);
+
+          analyzeRepo(repoUrl, pendingBranch || undefined, userId, (data: unknown) => {
+            const event = data as { agent?: string; type?: string };
+            if (event?.agent) {
+              store.setActiveAgent(event.agent);
+            }
+            if (event?.type === "error") {
+              const msg = (data as { message?: string }).message ?? "分析失败，请检查仓库地址或 Token 权限";
+              store.setError(msg);
+              store.setIsAnalyzing(false);
+              store.setActiveAgent(null);
+              return;
+            }
+            store.pushAgentEvent(data);
+          }).catch((err) => {
+            store.setError(err instanceof Error ? err.message : "分析失败");
+          }).finally(() => {
+            store.setIsAnalyzing(false);
+            store.setActiveAgent(null);
+          });
+        }
+      }, 500);
+
+      return () => clearTimeout(timer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
 
   const handleAnalyze = useCallback(async () => {
     // 未登录重定向到登录页

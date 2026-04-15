@@ -445,18 +445,31 @@ async def api_pr_create(req: PRCreateRequest, request: Request):
     """
     创建 GitHub Pull Request。
     流程：创建分支 → 提交文件修改 → 创建 PR
+
+    Token 优先级：
+    1. 用户 OAuth Token（从 NextAuth JWT 解码获取）
+    2. 环境变量 GITHUB_TOKEN（降级方案）
     """
     payload = require_auth(request)
     if not (payload.get("sub") or payload.get("id")):
         raise HTTPException(status_code=401, detail="无法识别用户身份")
 
-    # 检查 GITHUB_TOKEN
-    github_token = os.getenv("GITHUB_TOKEN", "").strip()
-    if not github_token:
-        raise HTTPException(
-            status_code=400,
-            detail="未配置 GITHUB_TOKEN，无法创建 PR。请在环境变量中设置 GitHub Personal Access Token。"
-        )
+    # 优先使用用户的 GitHub OAuth Token
+    user_github_token = payload.get("accessToken")
+    if user_github_token:
+        github_token = user_github_token
+        gitintel_logger.info(f"[PR Create] 使用用户 GitHub OAuth Token")
+    else:
+        # 降级：使用环境变量中的 GITHUB_TOKEN
+        github_token = os.getenv("GITHUB_TOKEN", "").strip()
+        if github_token:
+            gitintel_logger.warning("[PR Create] 用户未授权 repo scope，使用服务端 GITHUB_TOKEN（PR 将以服务端账号创建）")
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="未配置 GITHUB_TOKEN，无法创建 PR。请在环境变量中设置 GitHub Personal Access Token，"
+                      "或重新登录 GitHub 并授权 repo 权限。"
+            )
 
     service = GitHubPRService(token=github_token)
     result = await service.create_pr(

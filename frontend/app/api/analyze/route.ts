@@ -12,16 +12,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "未登录" }, { status: 401 });
   }
 
+  // 从请求头获取原始的 Authorization token，透传到后端用于解密获取用户 GitHub token
+  const authHeader = request.headers.get("Authorization");
+  const userId = session.user?.id ?? session.user?.sub ?? "";
+
   const body = await request.json();
   const repoUrl = body.repoUrl ?? body.repo_url;
   const branch = body.branch;
-  const userId = session.user?.id ?? session.user?.sub ?? "";
 
   const upstream = await fetch(`${API_BASE}/api/analyze`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "X-User-Id": userId,
+      ...(authHeader ? { "Authorization": authHeader } : {}),
     },
     body: JSON.stringify({ repo_url: repoUrl, branch }),
   });

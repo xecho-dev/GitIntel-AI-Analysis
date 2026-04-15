@@ -3,6 +3,7 @@ import GitHub from "next-auth/providers/github";
 
 declare module "next-auth" {
   interface Session {
+    accessToken?: string;
     user: {
       id?: string;
       name?: string | null;
@@ -30,24 +31,33 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     GitHub({
       clientId: githubClientId,
       clientSecret: githubClientSecret,
+      authorization: {
+        params: {
+          scope: "read:user user:email repo",
+        },
+      },
       // GitHub OAuth 不完全遵循 OIDC 规范，手动覆盖验证逻辑
       checks: ["none"],
     }),
   ],
   callbacks: {
     async jwt({ token, account, profile }) {
-      if (account?.provider === "github" && profile) {
-        // GitHub profile 使用 snake_case（与数据库字段对齐）
-        token.login = profile.login;
-        token.avatarUrl = profile.avatar_url;
+      if (account?.provider === "github") {
+        // 保存 GitHub access_token 用于后续 API 操作
+        token.accessToken = account.access_token;
         token.githubId = account.providerAccountId;
-        token.bio = profile.bio;
-        token.company = profile.company;
-        token.location = profile.location;
-        token.blog = profile.blog;
-        token.publicRepos = profile.public_repos;
-        token.followers = profile.followers;
-        token.following = profile.following;
+
+        if (profile) {
+          token.login = profile.login;
+          token.avatarUrl = profile.avatar_url;
+          token.bio = profile.bio;
+          token.company = profile.company;
+          token.location = profile.location;
+          token.blog = profile.blog;
+          token.publicRepos = profile.public_repos;
+          token.followers = profile.followers;
+          token.following = profile.following;
+        }
       }
       return token;
     },
@@ -55,6 +65,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (token.sub) {
         session.user.id = token.sub;
         session.user.sub = token.sub;
+      }
+      // 将 GitHub access_token 传递到前端 session
+      if (token.accessToken) {
+        session.accessToken = token.accessToken as string;
       }
       if (token.login) session.user.login = token.login as string;
       if (token.avatarUrl) session.user.image = token.avatarUrl as string;

@@ -1,7 +1,7 @@
 "use client";
 
 import { signIn } from "next-auth/react";
-import { Github } from "lucide-react";
+import { Github, Shield } from "lucide-react";
 
 export default function LoginPage() {
   return (
@@ -25,8 +25,23 @@ export default function LoginPage() {
             使用 GitHub 登录
           </button>
 
+          <div className="mt-6 p-4 bg-blue-500/5 border border-blue-500/20 rounded-lg">
+            <div className="flex items-center gap-2 text-blue-400 text-xs font-medium mb-2">
+              <Shield size={14} />
+              需要以下权限
+            </div>
+            <ul className="text-xs text-slate-400 space-y-1">
+              <li className="flex items-center gap-2">
+                <span className="text-emerald-400">✓</span> 读取你的公开资料（用户名、头像等）
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="text-emerald-400">✓</span> 读写你的仓库（用于创建 PR 和分支）
+              </li>
+            </ul>
+          </div>
+
           <p className="text-xs text-slate-500 text-center mt-6">
-            登录即表示你同意我们的服务条款。我们仅获取你的公开 GitHub 信息。
+            登录即表示你同意我们的服务条款。我们仅获取必要的 GitHub 权限用于创建 PR。
           </p>
         </div>
 

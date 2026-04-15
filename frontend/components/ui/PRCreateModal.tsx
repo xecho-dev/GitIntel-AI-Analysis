@@ -2,8 +2,7 @@
 
 import React, { useState, useCallback, useEffect } from "react";
 import dynamic from "next/dynamic";
-import { X, Rocket, Loader2, CheckCircle2, AlertCircle, GitPullRequest, ExternalLink, Sparkles, FileCode, GitBranch, Github } from "lucide-react";
-import { signIn } from "next-auth/react";
+import { X, Rocket, Loader2, CheckCircle2, AlertCircle, GitPullRequest, ExternalLink, Sparkles, FileCode, GitBranch } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Monaco DiffEditor 必须动态导入，禁用 SSR
@@ -43,19 +42,9 @@ export const PRCreateModal: React.FC<PRCreateModalProps> = ({
   const [modalState, setModalState] = useState<ModalState>("generating");
   const [fixes, setFixes] = useState<CodeFix[]>([]);
   const [errorMsg, setErrorMsg] = useState("");
-  const [needReauthorize, setNeedReauthorize] = useState(false);
-  const [hasGithubRepoAccess, setHasGithubRepoAccess] = useState(false);
   const [prResult, setPrResult] = useState<{ url: string; number: number; title: string; is_fork: boolean; fork_url: string } | null>(null);
   const [commitMessage, setCommitMessage] = useState("");
   const [editedValues, setEditedValues] = useState<string[]>([]);
-
-  // 弹窗打开时检查 GitHub 授权状态
-  useEffect(() => {
-    if (isOpen) {
-      checkGithubAccess();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
 
   // 弹窗打开时自动触发生成
   useEffect(() => {
@@ -64,55 +53,6 @@ export const PRCreateModal: React.FC<PRCreateModalProps> = ({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
-
-  const checkGithubAccess = async () => {
-    try {
-      const sessionRes = await fetch("/api/auth/session-full");
-      const sessionData = await sessionRes.json();
-      setHasGithubRepoAccess(!!sessionData?.accessToken);
-    } catch {
-      setHasGithubRepoAccess(false);
-    }
-  };
-
-  const handleReauthorize = () => {
-    // 保存当前 PR 创建的状态到 sessionStorage，OAuth 回来后可以恢复
-    if (repoUrl && suggestion) {
-      sessionStorage.setItem("gitintel_pending_repo_url", repoUrl);
-      sessionStorage.setItem("gitintel_pending_branch", branch || "");
-      sessionStorage.setItem("gitintel_pending_suggestion", JSON.stringify(suggestion));
-      sessionStorage.setItem("gitintel_pending_fixes", JSON.stringify(fixes));
-      sessionStorage.setItem("gitintel_pending_commit_message", commitMessage);
-      sessionStorage.setItem("gitintel_pending_edited_values", JSON.stringify(editedValues));
-      sessionStorage.setItem("gitintel_pending_pr_modal", "true");
-    }
-    signIn("github", { callbackUrl: "/" });
-  };
-
-  // 组件挂载时检查是否有待恢复的 PR 创建任务
-  useEffect(() => {
-    const pendingModal = sessionStorage.getItem("gitintel_pending_pr_modal");
-    if (pendingModal === "true") {
-      // 清除存储
-      sessionStorage.removeItem("gitintel_pending_pr_modal");
-
-      // 恢复状态
-      const savedFixes = sessionStorage.getItem("gitintel_pending_fixes");
-      const savedCommitMessage = sessionStorage.getItem("gitintel_pending_commit_message");
-      const savedEditedValues = sessionStorage.getItem("gitintel_pending_edited_values");
-
-      if (savedFixes) {
-        setFixes(JSON.parse(savedFixes));
-        setModalState("preview");
-      }
-      if (savedCommitMessage) {
-        setCommitMessage(savedCommitMessage);
-      }
-      if (savedEditedValues) {
-        setEditedValues(JSON.parse(savedEditedValues));
-      }
-    }
-  }, []);
 
   const generateFixes = useCallback(async () => {
     if (!suggestion) return;
@@ -123,7 +63,6 @@ export const PRCreateModal: React.FC<PRCreateModalProps> = ({
     setPrResult(null);
     setCommitMessage("");
     setEditedValues([]);
-    setNeedReauthorize(false);
 
     try {
       const res = await fetch("/api/pr/generate", {
@@ -181,7 +120,6 @@ export const PRCreateModal: React.FC<PRCreateModalProps> = ({
 
     setModalState("creating");
     setErrorMsg("");
-    setNeedReauthorize(false);
 
     const finalFixes = fixes.map((fix, idx) => ({
       ...fix,
@@ -218,12 +156,6 @@ export const PRCreateModal: React.FC<PRCreateModalProps> = ({
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: "创建 PR 失败" }));
-        if (err.needReauthorize) {
-          setNeedReauthorize(true);
-          setErrorMsg(err.detail ?? "GitHub 授权不足，请重新授权 repo 权限");
-          setModalState("error");
-          return;
-        }
         throw new Error(err.error ?? err.detail ?? "创建 PR 失败");
       }
 
@@ -275,7 +207,7 @@ export const PRCreateModal: React.FC<PRCreateModalProps> = ({
         {/* ── Header ─────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/8 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500/30 to-purple-500/30 flex items-center justify-center">
+            <div className="w-9 min-w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500/30 to-purple-500/30 flex items-center justify-center">
               <Rocket size={18} className="text-blue-400" />
             </div>
             <div>
@@ -406,33 +338,6 @@ export const PRCreateModal: React.FC<PRCreateModalProps> = ({
           {/* Preview */}
           {modalState === "preview" && (
             <div className="space-y-4">
-              {/* GitHub repo 授权提示 */}
-              {!hasGithubRepoAccess && (
-                <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl">
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center shrink-0 mt-0.5">
-                      <Github size={14} className="text-amber-400" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm text-amber-400 font-medium">
-                        需要 GitHub 授权才能创建 PR
-                      </p>
-                      <p className="text-xs text-slate-400 mt-1">
-                        当前账号没有 repo 权限，创建的 PR 将以服务端账号提交。
-                        点击下方按钮重新授权 GitHub。
-                      </p>
-                      <button
-                        onClick={handleReauthorize}
-                        className="mt-3 flex items-center gap-2 px-4 py-2 text-xs rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-400 hover:bg-amber-500/30 transition-all"
-                      >
-                        <Github size={12} />
-                        重新授权 GitHub
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {/* Suggestion context */}
               {suggestion?.reason && (
                 <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl">
@@ -551,20 +456,20 @@ export const PRCreateModal: React.FC<PRCreateModalProps> = ({
                             });
                           }}
                           options={{
+                            renderSideBySide: true,
                             readOnly: false,
                             minimap: { enabled: false },
                             scrollBeyondLastLine: false,
                             fontSize: 12,
                             lineNumbers: "on",
                             wordWrap: "on",
-                            renderSideBySide: true,
                             renderLineHighlight: "none",
                             scrollbar: {
                               verticalScrollbarSize: 4,
                               horizontalScrollbarSize: 4,
                             },
                             padding: { top: 8, bottom: 8 },
-                            diffWordWrap: "on",
+                            automaticLayout: true,
                           }}
                         />
                       </div>
@@ -668,28 +573,18 @@ export const PRCreateModal: React.FC<PRCreateModalProps> = ({
                 </p>
               </div>
               <div className="flex items-center gap-3">
-                {needReauthorize ? (
-                  <button
-                    onClick={handleReauthorize}
-                    className="flex items-center gap-2 px-5 py-2 text-sm rounded-lg bg-amber-500 text-white font-medium hover:bg-amber-600 transition-all"
-                  >
-                    <Github size={14} />
-                    重新授权 GitHub
-                  </button>
-                ) : (
-                  <button
-                    onClick={
-                      errorMsg.includes("generate") ||
-                      errorMsg.includes("生成") ||
-                      errorMsg.includes("授权")
-                        ? generateFixes
-                        : handleCreatePR
+                <button
+                  onClick={
+                    errorMsg.includes("generate") ||
+                    errorMsg.includes("生成") ||
+                    errorMsg.includes("授权")
+                      ? generateFixes
+                      : handleCreatePR
                     }
                     className="px-5 py-2 text-sm rounded-lg bg-blue-500 text-white font-medium hover:bg-blue-600 transition-all"
                   >
                     重试
                   </button>
-                )}
                 <button
                   onClick={onClose}
                   className="px-4 py-2 text-sm rounded-lg border border-white/10 text-slate-400 hover:text-white hover:bg-white/5 transition-all"

@@ -40,7 +40,6 @@ export const PRCreateModal: React.FC<PRCreateModalProps> = ({
   repoUrl,
   branch,
 }) => {
-  const { data: session } = useSession();
   const [modalState, setModalState] = useState<ModalState>("generating");
   const [fixes, setFixes] = useState<CodeFix[]>([]);
   const [errorMsg, setErrorMsg] = useState("");

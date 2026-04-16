@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Download } from "lucide-react";
+import { Download, Sparkles } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { useAppStore } from "@/store/useAppStore";
 
@@ -33,6 +33,7 @@ export const AnalysisPreview = () => {
   const allDone = finalResult !== null;
   const agentEvents = useAppStore((s) => s.agentEvents);
   const [isExporting, setIsExporting] = useState(false);
+  const [aiImageEnabled, setAiImageEnabled] = useState(false);
 
   const archEvent = agentEvents["architecture"];
   const qualityEvent = agentEvents["quality"];
@@ -64,7 +65,7 @@ export const AnalysisPreview = () => {
 
   const archStyle = archData?.architectureStyle;
 
-  const handleExportPdf = async () => {
+  const handleExportPdf = async (withAiImage: boolean = false) => {
     if (isExporting || !finalResult) return;
     setIsExporting(true);
     try {
@@ -74,6 +75,7 @@ export const AnalysisPreview = () => {
         body: JSON.stringify({
           repo_url: repoUrl,
           result_data: finalResult,
+          enable_ai_image: withAiImage,
         }),
       });
 
@@ -185,8 +187,26 @@ export const AnalysisPreview = () => {
       {/* 导出 PDF — 必须等 4 个 agent 全部完成 */}
       {allDone && (
         <div className="mt-4">
+          {/* AI 生图开关 */}
+          <label className="flex items-center gap-2 mb-3 cursor-pointer group">
+            <div className="relative">
+              <input
+                type="checkbox"
+                checked={aiImageEnabled}
+                onChange={(e) => setAiImageEnabled(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-8 h-4 bg-[#1c2330] rounded-full peer-checked:bg-indigo-500/30 transition-all" />
+              <div className="absolute left-0.5 top-0.5 w-3 h-3 bg-slate-500 rounded-full peer-checked:bg-indigo-400 peer-checked:translate-x-4 transition-all" />
+            </div>
+            <span className="flex items-center gap-1.5 text-[10px] text-slate-400 group-hover:text-slate-300 transition-colors">
+              <Sparkles size={12} className={aiImageEnabled ? "text-amber-400" : ""} />
+              AI 生图美化（需配置通义千问）
+            </span>
+          </label>
+
           <button
-            onClick={handleExportPdf}
+            onClick={() => handleExportPdf(aiImageEnabled)}
             disabled={isExporting}
             className="w-full py-2 bg-indigo-500/10 border border-indigo-500/30 rounded-lg flex items-center justify-center gap-2 text-[11px] font-bold text-indigo-400 hover:bg-indigo-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
@@ -196,6 +216,7 @@ export const AnalysisPreview = () => {
               <>
                 <Download size={14} />
                 导出 PDF 报告
+                {aiImageEnabled && <Sparkles size={12} className="text-amber-400" />}
               </>
             )}
           </button>

@@ -313,7 +313,7 @@ async def api_export_pdf(req: ExportPdfRequest, request: Request):
         "repo_url": req.repo_url,
         "branch": req.branch,
         **req.result_data,
-    })
+    }, enable_ai_image=req.enable_ai_image)
 
     import re
     repo_name = re.sub(r"[^a-zA-Z0-9_-]", "_", req.repo_url.split("/")[-1].replace(".git", ""))

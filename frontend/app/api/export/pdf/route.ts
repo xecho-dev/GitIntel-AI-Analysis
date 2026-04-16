@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { repo_url, branch, result_data } = body;
+  const { repo_url, branch, result_data, enable_ai_image } = body;
 
   if (!repo_url || !result_data) {
     return NextResponse.json({ error: "缺少必要参数" }, { status: 400 });
@@ -23,7 +23,12 @@ export async function POST(request: NextRequest) {
       "Content-Type": "application/json",
       "X-User-Id": session.user?.id ?? session.user?.sub ?? "",
     },
-    body: JSON.stringify({ repo_url, branch: branch ?? "main", result_data }),
+    body: JSON.stringify({
+      repo_url,
+      branch: branch ?? "main",
+      result_data,
+      enable_ai_image: enable_ai_image ?? false,
+    }),
   });
 
   if (!upstream.ok) {
